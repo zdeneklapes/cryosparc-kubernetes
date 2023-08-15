@@ -19,12 +19,14 @@ Creates, updates, and deletes a job object.
 from os import path
 from time import sleep
 from argparse import ArgumentParser, Namespace
-
 import yaml
 from typing import Optional
+from dataclasses import dataclass, fields
+import shlex
 
 from kubernetes import client, config
-from dataclasses import dataclass, fields
+
+from utils import delete_none, transform_dict
 
 
 @dataclass
@@ -36,10 +38,11 @@ class Program:
 
 def create_job_object(args: Namespace):
     # Configureate Pod template container
+    cmd = shlex.split(args.run_cmd)
     container = client.V1Container(
         name=args.job_name,
         image=args.image,
-        command=[args.run_cmd.split(" ")]
+        command=cmd,
     )
     # Create and configure a spec section
     template = client.V1PodTemplateSpec(
@@ -120,6 +123,12 @@ def main():
     )
     config.load_kube_config()
     program.job = create_job_object(program.args)
+
+    # Dump
+    dict_to_yaml = transform_dict(delete_none(program.job.to_dict()))
+    yaml.dump(dict_to_yaml, open(path.join(path.dirname(__file__), "job-foo.yaml"), "w"))
+
+
     create_job(program)
     update_job(program)
     delete_job(program)
