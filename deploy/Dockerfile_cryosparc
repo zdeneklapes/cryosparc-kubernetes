@@ -1,0 +1,17 @@
+FROM cerit.io/os/ubuntu:22.04-user
+
+# Cryosparc
+ARG LICENSE=74f2d264-77d7-11ed-bb40-63f6990bba5f
+RUN apt-get update && fakeroot apt-get -y --no-install-recommends install curl python3 python3-pip  libtiff5 python3-setuptools python3-dev zip unzip openssh-server && apt-get clean && rm -rf /var/lib/apt/lists/*  && ln -s /bin/true /usr/bin/ping && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config &&  sed -i 's/.*ClientAliveInterval.*/ClientAliveInterval 30/g' /etc/ssh/sshd_config &&  sed -i 's/#Port 22.*/Port 2222/g' /etc/ssh/sshd_config &&  sed -i 's/UsePAM.*/UsePAM no/g' /etc/ssh/sshd_config && echo "PubkeyAcceptedKeyTypes=+ssh-rsa" >> /etc/ssh/sshd_config
+RUN fakeroot addgroup --gid 1000 cryo &&  fakeroot adduser --gid 1000 --uid 1000 --disabled-password --gecos cryo cryo
+RUN cd /opt && mkdir /opt/cryosparc_database && curl -L https://get.cryosparc.com/download/master-latest/$LICENSE | tar xzvf -  && \
+    cd cryosparc_master && ./install.sh --license $LICENSE --yes --dbpath /opt/cryosparc_database --port 8080 --hostname 127.0.0.1
+RUN sed -i 's:    disk_has_space=.*:    disk_has_space="true":g'  /opt/cryosparc_master/bin/cryosparcm
+RUN echo "CRYOSPARC_FORCE_HOSTNAME=true" >>  /opt/cryosparc_master/config.sh && echo "CRYOSPARC_HOSTNAME_CHECK=false" >> /opt/cryosparc_master/config.sh
+
+# Install jobs_cmd
+COPY src /usr/local/bin
+COPY templates /opt/cryosparc_master/templates
+COPY requirements.txt /tmp/jobs_cmd/requirements.txt
+RUN cd /tmp/jobs_cmd && pip3 install -r requirements.txt
+RUN fakeroot chown -R 1000:1000 /opt/cryosparc_master/

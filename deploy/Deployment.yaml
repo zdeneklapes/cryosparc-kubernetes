@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cryosparc
+spec:
+  replicas: 1 # TODO: Change to 3
+  selector:
+    matchLabels:
+      app: cryosparc
+  template:
+    metadata:
+      labels:
+        app: cryosparc
+    spec:
+      restartPolicy: Always
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+#      serviceAccountName: user1
+      containers:
+        - name: cryosparc
+          image: cerit.io/cerit/cryosparc:master-v0.2
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args: ["/opt/cryosparc_master/templates/run.sh && while :; do sleep 1000000; done"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8080
