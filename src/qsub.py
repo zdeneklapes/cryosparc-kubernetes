@@ -160,7 +160,7 @@ def parse_arguments():
     args.add_argument('--namespace', type=str, default="default", help="Name of the job")
     args.add_argument("--image", type=str, default="busybox:1.28", help="Container image to use")
     args.add_argument("--num-cpu", type=str, default="1", help="Number of CPU cores to use")
-    args.add_argument("--num-gpu", type=str, help="Number of GPU cores to use")
+    args.add_argument("--num-gpu", type=    str, help="Number of GPU cores to use")
     args.add_argument("--memory", type=str, default="10Mi", help="Memory to use")
     args.add_argument("--walltime", type=str, default="02:00:00", help="Walltime")
     args.add_argument("--scratch-local", type=str, default="1000Mi", help="Number of GPU cores to use")
@@ -179,6 +179,7 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+    if len(args.job_name) == 0: args.job_name = ''.join(random.choices(string.ascii_lowercase+string.digits, k=7))
 
     if args.d:
         print("pi [CREATED]")

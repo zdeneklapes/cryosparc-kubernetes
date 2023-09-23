@@ -39,7 +39,7 @@ def get_job_status(api_instance, args: Namespace):
             "Job ID": api_response.metadata.name,
             "Username": api_response.metadata.namespace,
             "Queue": "****",
-            "Jobname": "****",
+            "Jobname": api_response.metadata.name,
             "SessID": "****",
             "NDS": "*",
             "TSK": "*",
