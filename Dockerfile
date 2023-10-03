@@ -8,6 +8,7 @@ EXPOSE 8000
 
 WORKDIR /app
 COPY requirements.txt /app/
+COPY tmp/config /root/.kube/config
 RUN set -ex && \
     apt-get update &&  \
     apt-get -y install \

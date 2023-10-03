@@ -22,9 +22,17 @@ spec:
       containers:
         - name: cryosparc
           image: cerit.io/cerit/cryosparc:master-v0.2
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
           command: ["/bin/bash", "-c"]
           args: ["/opt/cryosparc_master/templates/run.sh && while :; do sleep 1000000; done"]
+#          args: ["while :; do sleep 1000000; done"]
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

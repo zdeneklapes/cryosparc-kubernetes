@@ -20,19 +20,14 @@ def get_job_status(api_instance, args: Namespace):
             namespace=args.namespace
         )
 
-        # Determine the state of the job
-        if api_response.status.active == 1:
-            job_state = "R"  # Running
-        elif api_response.status.active == 0:
-            job_state = "Q"  # Queued
-        else:
-            job_state = "C"  # Completed
-
-        # Additional checks for various job statuses
         if api_response.status.failed:
-            job_state = "F"  # Failed
-        if api_response.status.succeeded:
-            job_state = "S"  # Succeeded
+            job_state = "F" # Failed
+        elif api_response.status.succeeded:
+            job_state = "C"  # Completed
+        elif api_response.status.active:
+            job_state = "R"  # Running
+        else:
+            job_state = "Q" # Queued
 
         # R: running, C: completed, E: exiting, H: held, Q: queued, T: moved, W: waiting
         job_data = {
