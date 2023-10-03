@@ -1,15 +1,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: cryosparc-service
+  name: cryosparc-svc
   labels:
-    name: cryosparc-service
+    name: cryosparc-svc
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: cryosparc
   ports:
     - name: cryosparc-port
       protocol: TCP
-      port: 8080 # Port available in the pod
-#      targetPort: 8080
+      targetPort: 8080
+      port: 80

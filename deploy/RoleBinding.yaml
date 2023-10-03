@@ -1,14 +1,14 @@
-# Create a RoleBinding that associates the Role with the service account.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: job-creator-binding
-  namespace: default
-subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: default
-roleRef:
-  kind: Role
-  name: job-creator
-  apiGroup: rbac.authorization.k8s.io
+## Create a RoleBinding that associates the Role with the service account.
+#apiVersion: rbac.authorization.k8s.io/v1
+#kind: RoleBinding
+#metadata:
+#  name: cryosparc-role-binding
+#  namespace: zdeneklapeseinfracesnetcz-ns
+#subjects:
+#  - kind: ServiceAccount
+#    name: cryosparc-role
+#    namespace: zdeneklapeseinfracesnetcz-ns
+#roleRef:
+#  kind: Role
+#  name: cryosparc-role
+#  apiGroup: rbac.authorization.k8s.io
