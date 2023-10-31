@@ -15,10 +15,11 @@ spec:
       restartPolicy: Always
       securityContext:
         runAsUser: 1000
+        runAsGroup: 1000
         runAsNonRoot: true
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
-#      serviceAccountName: user1
       containers:
         - name: cryosparc
           image: cerit.io/cerit/cryosparc:master-v0.2
@@ -38,5 +39,7 @@ spec:
             capabilities:
               drop:
                 - ALL
+#              add:
+#                - SYS_ADMIN
           ports:
             - containerPort: 8080
