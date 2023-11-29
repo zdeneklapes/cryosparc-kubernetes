@@ -17,7 +17,9 @@ def get_command_output(response: V1Job, args: Namespace) -> str:
     core_v1 = client.CoreV1Api()
     pod_label_selector = "controller-uid=" + response.metadata.labels['controller-uid']
     pods_list = core_v1.list_namespaced_pod(
-        namespace=args.namespace, label_selector=pod_label_selector, timeout_seconds=10
+        namespace=args.namespace,
+        label_selector=pod_label_selector,
+        timeout_seconds=10
     )
 
     # Notice that:
@@ -135,7 +137,7 @@ def create_job_object(args: Namespace):
     # Create the specification of deployment
     spec = client.V1JobSpec(
         template=template,
-        backoff_limit=4,
+        backoff_limit=0,
     )
     # Instantiate the job object
     job = client.V1Job(
@@ -172,7 +174,8 @@ def parse_arguments():
     args.add_argument(
         '--job-name',
         type=str,
-        default=''.join(random.choices(string.ascii_lowercase + string.digits, k=7)),
+        default=None,
+        # default=''.join(random.choices(string.ascii_lowercase + string.digits, k=7)),
         help="Name of the job"
     )  # TODO: Check if job already exists, if so, generate new name
     args.add_argument('--namespace', type=str, default="default", help="Name of the job")
@@ -193,8 +196,10 @@ def parse_arguments():
     args.add_argument("--local-config", action="store_true", default=False, help="Local config")
     args.add_argument("-d", action="store_true", help="Debug mode")
     _args = args.parse_args()
-    if _args.job_name == "":
+    if _args.job_name == "" or _args.job_name is None or _args.job_name.startswith("-"):
+        # print("Generating random job name")
         _args.job_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=7))
+    # print(_args.job_name)
     return _args
 
 
