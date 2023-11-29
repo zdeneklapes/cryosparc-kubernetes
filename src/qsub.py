@@ -81,13 +81,25 @@ def transform_dict(data):
 def create_job_object(args: Namespace):
     # Configurate Pod template container
     command = shlex.split(args.run_cmd)
+    security_context = client.V1PodSecurityContext(
+        # Pod security context
+        fs_group_change_policy="OnRootMismatch",
+        run_as_non_root=True,
+        seccomp_profile=client.V1SeccompProfile(
+            type="RuntimeDefault"
+        ),
+    )
     container = client.V1Container(
         name=args.job_name,
         image=args.image,
         command=command,
         security_context=client.V1SecurityContext(
             run_as_user=1000,
-            run_as_group=1000,
+            # run_as_group=1000,
+            allow_privilege_escalation=False,
+            capabilities=client.V1Capabilities(
+                drop=["ALL"]
+            ),
         ),
         resources=client.V1ResourceRequirements(
             requests={"cpu": args.num_cpu, "memory": args.memory},
@@ -113,19 +125,24 @@ def create_job_object(args: Namespace):
     # Create and configure a spec section
     template = client.V1PodTemplateSpec(
         metadata=client.V1ObjectMeta(labels={"app": args.job_name}),
-        spec=client.V1PodSpec(restart_policy="Never", containers=[container], volumes=volumes),
+        spec=client.V1PodSpec(
+            restart_policy="Never",
+            containers=[container],
+            volumes=volumes,
+            security_context=security_context
+        ),
     )
     # Create the specification of deployment
     spec = client.V1JobSpec(
         template=template,
-        backoff_limit=4
+        backoff_limit=4,
     )
     # Instantiate the job object
     job = client.V1Job(
         api_version="batch/v1",
         kind="Job",
         metadata=client.V1ObjectMeta(name=args.job_name),
-        spec=spec
+        spec=spec,
     )
     return job
 
@@ -139,7 +156,7 @@ def create_job(api_instance, job, args: Namespace):
         print(f"{api_response.metadata.name}")
     except client.rest.ApiException as e:
         print("[FAILED] Can not create: Status=%s : JobName=%s : Reason=%s" % (
-        e.status, args.job_name, eval(e.body)['reason']))
+            e.status, args.job_name, eval(e.body)['reason']))
         pprint(eval(e.body))
         pprint(e.headers)
         exit(1)
