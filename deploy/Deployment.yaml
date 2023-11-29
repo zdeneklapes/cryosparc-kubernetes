@@ -13,13 +13,18 @@ spec:
         app: cryosparc
     spec:
       restartPolicy: Always
-      securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        runAsNonRoot: true
+      securityContext: # Pod security context
         fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+#      securityContext:
+#        runAsUser: 1000
+#        runAsGroup: 1000
+#        runAsNonRoot: true
+#        fsGroupChangePolicy: OnRootMismatch
+#        seccompProfile:
+#          type: RuntimeDefault
       containers:
         - name: cryosparc
           image: cerit.io/cerit/cryosparc:master-v0.2
@@ -33,13 +38,23 @@ spec:
               cpu: "2"
           command: ["/bin/bash", "-c"]
           args: ["/opt/cryosparc_master/templates/run.sh && while :; do sleep 1000000; done"]
-#          args: ["while :; do sleep 1000000; done"]
-          securityContext:
+          #          args: ["while :; do sleep 1000000; done"]
+          securityContext: # Container security context
+            runAsUser: 1000
             allowPrivilegeEscalation: false
             capabilities:
               drop:
                 - ALL
+#          securityContext:
+#            allowPrivilegeEscalation: false
+#            runAsNonRoot: true
+#            seccompProfile:
+#              type: RuntimeDefault
+#            capabilities:
+#              drop:
+#                - ALL
 #              add:
 #                - SYS_ADMIN
+#            readOnlyRootFilesystem: true
           ports:
             - containerPort: 8080

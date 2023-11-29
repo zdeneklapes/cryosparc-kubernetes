@@ -175,13 +175,14 @@ def parse_arguments():
     args.add_argument("--output", type=str, nargs="*", default=[], help="Output file")
     args.add_argument("--local-config", action="store_true", default=False, help="Local config")
     args.add_argument("-d", action="store_true", help="Debug mode")
-    return args.parse_args()
+    _args = args.parse_args()
+    if _args.job_name == "":
+        _args.job_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=7))
+    return _args
 
 
 def main():
     args = parse_arguments()
-    if len(args.job_name) == 0:
-        args.job_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=7))
 
     if args.d:
         print("pi [CREATED]")

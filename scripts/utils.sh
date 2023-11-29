@@ -28,7 +28,7 @@ function pack() {
         scripts \
         src \
         templates \
-        Dockerfile_v2 \
+        Dockerfile \
         main.sh \
         requirements.txt
 }

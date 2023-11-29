@@ -10,8 +10,15 @@ RUN sed -i 's:    disk_has_space=.*:    disk_has_space="true":g'  /opt/cryosparc
 RUN echo "CRYOSPARC_FORCE_HOSTNAME=true" >>  /opt/cryosparc_master/config.sh && echo "CRYOSPARC_HOSTNAME_CHECK=false" >> /opt/cryosparc_master/config.sh
 
 # Install jobs_cmd
-COPY src /usr/local/bin
-COPY templates /opt/cryosparc_master/templates
+
+
+# Install jobs_cmd dependencies
 COPY requirements.txt /tmp/jobs_cmd/requirements.txt
 RUN cd /tmp/jobs_cmd && pip3 install -r requirements.txt
-RUN fakeroot chown -R 1000:1000 /opt/cryosparc_master/
+
+
+# TODO: is necessary to copy scripts to /usr/local/bin? when debugging the build is needed everytime some change is made
+COPY src /usr/local/bin
+
+COPY templates /opt/cryosparc_master/templates
+RUN fakeroot chown -R 1000:1000 /opt/cryosparc_master/ # TODO: takes too long
