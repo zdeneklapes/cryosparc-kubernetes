@@ -138,7 +138,8 @@ def create_job(api_instance, job, args: Namespace):
         )
         print(f"{api_response.metadata.name}")
     except client.rest.ApiException as e:
-        print("[FAILED] Can not create: Status=%s : JobName=%s : Reason=%s" % (e.status, args.job_name, eval(e.body)['reason']))
+        print("[FAILED] Can not create: Status=%s : JobName=%s : Reason=%s" % (
+        e.status, args.job_name, eval(e.body)['reason']))
         pprint(eval(e.body))
         pprint(e.headers)
         exit(1)
@@ -154,13 +155,13 @@ def parse_arguments():
     args.add_argument(
         '--job-name',
         type=str,
-        default=''.join(random.choices(string.ascii_lowercase+string.digits, k=7)),
+        default=''.join(random.choices(string.ascii_lowercase + string.digits, k=7)),
         help="Name of the job"
-    )
+    )  # TODO: Check if job already exists, if so, generate new name
     args.add_argument('--namespace', type=str, default="default", help="Name of the job")
     args.add_argument("--image", type=str, default="busybox:1.28", help="Container image to use")
     args.add_argument("--num-cpu", type=str, default="1", help="Number of CPU cores to use")
-    args.add_argument("--num-gpu", type=    str, help="Number of GPU cores to use")
+    args.add_argument("--num-gpu", type=str, default=0, help="Number of GPU cores to use")
     args.add_argument("--memory", type=str, default="10Mi", help="Memory to use")
     args.add_argument("--walltime", type=str, default="02:00:00", help="Walltime")
     args.add_argument("--scratch-local", type=str, default="1000Mi", help="Number of GPU cores to use")
@@ -171,7 +172,7 @@ def parse_arguments():
     args.add_argument("--dest-path", type=str, help="Command to run in container")
     args.add_argument("--project-uid", type=str, help="Command to run in container")
     args.add_argument("--job-uid", type=str, help="Command to run in container")
-    args.add_argument("--output", type=str, nargs="*", help="Output file", default=[])
+    args.add_argument("--output", type=str, nargs="*", default=[], help="Output file")
     args.add_argument("--local-config", action="store_true", default=False, help="Local config")
     args.add_argument("-d", action="store_true", help="Debug mode")
     return args.parse_args()
@@ -179,7 +180,8 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
-    if len(args.job_name) == 0: args.job_name = ''.join(random.choices(string.ascii_lowercase+string.digits, k=7))
+    if len(args.job_name) == 0:
+        args.job_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=7))
 
     if args.d:
         print("pi [CREATED]")

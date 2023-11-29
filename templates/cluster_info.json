@@ -3,7 +3,7 @@
     "worker_bin_path" : "/tmp/cryosparcw",
     "cache_path" : "/tmp/cryosparc_cache",
     "send_cmd_tpl" : "{{ command }}",
-    "qsub_cmd_tpl" : "qsub.py --num-cpu={{ num_cpu }} --num-gpu={{ num_gpu }} --run-cmd={{ script_path_abs }} --job-name={{ cluster_job_id }} --namespace=zdeneklapeseinfracesnetcz-ns",
+    "qsub_cmd_tpl" : "qsub.py --num-cpu={{ num_cpu }} --num-gpu={{ num_gpu }} --run-cmd={{ script_path_abs }} --namespace=zdeneklapeseinfracesnetcz-ns",
     "qstat_cmd_tpl" : "qstat.py --job-name={{ cluster_job_id }} --namespace=zdeneklapeseinfracesnetcz-ns",
     "qdel_cmd_tpl" : "qdel.py --job-name={{ cluster_job_id }} --namespace=zdeneklapeseinfracesnetcz-ns",
     "qinfo_cmd_tpl" : "qstat.py --job-name={{ cluster_job_id }}",
