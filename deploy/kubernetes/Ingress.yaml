@@ -2,23 +2,25 @@ kind: Ingress
 apiVersion: networking.k8s.io/v1
 metadata:
   name: cryosparc-ingress
-
   annotations:
-    kubernetes.io/ingress.class: "nginx"
+    kubernetes.io/ingress.class: "nginx" # NOTE:  Can not be set when ingressClassName is set
     kubernetes.io/tls-acme: "true"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  tls:
-    - hosts:
-        - "cryosparc.dyn.cloud.e-infra.cz"
-      secretName: cryosparc-dyn-cloud-e-infra-cz-tls
+#  ingressClassName: "cryosparc-ingress-class"
   rules:
     - host: "cryosparc.dyn.cloud.e-infra.cz"
       http:
         paths:
           - backend:
               service:
-                name: cryosparc-svc
+                name: cryosparc-service # Service - metadata.labels.name
                 port:
                   number: 80
+#            path: /
             pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - "cryosparc.dyn.cloud.e-infra.cz"
+      secretName: cryosparc-dyn-cloud-e-infra-cz-tls
+  # TODO: setup defaultBackend

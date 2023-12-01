@@ -1,10 +1,9 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: cryosparc-svc
-
+  name: cryosparc-service
   labels:
-    name: cryosparc-svc
+    name: cryosparc-service # Filter Ingress - spec.rules.http.backend.service.name
 spec:
   type: ClusterIP
   selector:
