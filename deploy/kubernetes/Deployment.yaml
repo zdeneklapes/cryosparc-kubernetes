@@ -24,6 +24,9 @@ spec:
           imagePullPolicy: Always
           command: [ "/bin/bash", "-c" ]
           args: [ "/opt/cryosparc_master/entrypoints/entrypoints.sh && while :; do sleep 10000; done" ]
+          env:
+            - name: COMPOSE_HTTP_TIMEOUT
+              value: "480"
           ports:
             - containerPort: 8080
           resources:

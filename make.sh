@@ -6,9 +6,9 @@ NC='\033[0m'
 GREEN='\033[0;32m'
 
 function clean_kubernetes() {
-    kubectl delete deploy/kubernetes/
-    kubectl delete pods --all
-    kubectl delete jobs --all
+    kubectl delete -f deploy/kubernetes/
+    kubectl delete pods --all -f
+    kubectl delete jobs --all -f
 }
 
 function docker_show_ipaddress() {
@@ -51,11 +51,10 @@ function pack() {
     clean
     zip -r "${ZIP_NAME}" \
         deploy \
-        scripts \
         src \
-        templates \
+        entrypoints \
         Dockerfile \
-        main.sh \
+        make.sh \
         requirements.txt
 }
 
@@ -65,13 +64,25 @@ function send() {
     #   ZIP_NAME: Name of the zip file
     #   VPS_URI: URI of the remote server
 
-    # check if zip name is set
+    # Check Arguments
     if [ -z ${ZIP_NAME+x} ]; then ZIP_NAME='cryosparc.zip'; fi
-    # check if vps uri is set
     if [ -z ${VPS_URI+x} ]; then VPS_URI='osiris_lapes:/home/lapes/repos'; fi
 
-    scp "${ZIP_NAME}" "${VPS_URI}"
-    rm ${ZIP_NAME}
+    folder="~/repos/cryosparc"
+    zip_remote_filepath="~/repos/${ZIP_NAME}"
+
+    # Clean remote directory
+    ssh osiris_lapes "rm -rfd ${folder}" && printf "${GREEN}Cleaned remote directory${NC}\n"
+
+    # Send zip
+    scp "${ZIP_NAME}" "${VPS_URI}" && printf "${GREEN}Sent zip${NC}\n" || die "Failed to send zip"
+
+    # Unzip
+    ssh osiris_lapes "unzip /home/lapes/repos/cryosparc.zip -d /home/lapes/repos/cryosparc" && printf "${GREEN}Unzipped${NC}\n"
+
+    # Remove zip locally and remotely
+    ssh osiris_lapes "rm -rfd ${zip_remote_filepath}" && printf "${GREEN}Removed zip remotely${NC}\n"
+    rm ${ZIP_NAME} && printf "${GREEN}Removed zip locally${NC}\n"
 }
 
 function help() {
@@ -104,7 +115,8 @@ function main() {
     [[ "$#" -eq 0 ]] && die "No arguments provided"
     while [ "$#" -gt 0 ]; do
         case "$1" in
-        *) "$1" || die "Unknown function: $1()" ;;
+        # BUG: die run even if function exists (but error occur inside function)
+        *) "$1" || die "Unknown function: $1() or error occur inside function" ;;
         esac
         shift
     done
