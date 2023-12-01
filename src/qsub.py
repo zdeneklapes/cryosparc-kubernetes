@@ -117,7 +117,7 @@ def create_job_object(args: Namespace):
         ),
         resources=client.V1ResourceRequirements(
             requests={"cpu": args.num_cpu, "memory": args.memory},
-            limits={"cpu": args.num_cpu, "memory": args.memory, "nvidia.com/gpu": args.num_gpu},
+            limits={"cpu": args.num_cpu, "memory": args.memory},
         ),
         volume_mounts=[
             client.V1VolumeMount(
@@ -192,7 +192,7 @@ def parse_arguments():
     args.add_argument("--image", type=str, default="busybox:1.28", help="Container image to use")
     args.add_argument("--num-cpu", type=str, default="1", help="Number of CPU cores to use")
     args.add_argument("--num-gpu", type=str, default=0, help="Number of GPU cores to use")
-    args.add_argument("--memory", type=str, default="10Mi", help="Memory to use")
+    args.add_argument("--memory", type=str, default="10Gi", help="Memory to use")
     args.add_argument("--walltime", type=str, default="02:00:00", help="Walltime")
     args.add_argument("--scratch-local", type=str, default="1000Mi", help="Number of GPU cores to use")
     args.add_argument("--command", type=str, help="Command to run in container")
