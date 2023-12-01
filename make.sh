@@ -6,7 +6,7 @@ NC='\033[0m'
 GREEN='\033[0;32m'
 
 function clean_kubernetes() {
-    kubectl delete deploy/
+    kubectl delete deploy/kubernetes/
     kubectl delete pods --all
     kubectl delete jobs --all
 }

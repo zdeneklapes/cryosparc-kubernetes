@@ -23,7 +23,7 @@ spec:
           image: cerit.io/cerit/cryosparc:master-v0.2
           imagePullPolicy: Always
           command: [ "/bin/bash", "-c" ]
-          args: [ "/opt/cryosparc_master/templates/run.sh && while :; do sleep 10000; done" ]
+          args: [ "/opt/cryosparc_master/entrypoints/entrypoints.sh && while :; do sleep 10000; done" ]
           ports:
             - containerPort: 8080
           resources:
