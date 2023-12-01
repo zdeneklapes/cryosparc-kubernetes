@@ -6,9 +6,16 @@ NC='\033[0m'
 GREEN='\033[0;32m'
 
 function clean_kubernetes() {
-    kubectl delete -f deploy/kubernetes/
-    kubectl delete pods --all -f
-    kubectl delete jobs --all -f
+    # Clean kubernetes
+    # ENVIRONMENT VARIABLES:
+    #   FORCE: true/false - Force deletion of pods and jobs
+
+    # Check Arguments
+    if [ -z ${FORCE+x} ]; then FORCE='false'; fi
+
+    kubectl delete -f deploy/kubernetes/ --force=${FORCE}
+    kubectl delete pods --all --force=${FORCE}
+    kubectl delete jobs --all --force=${FORCE}
 }
 
 function docker_show_ipaddress() {
@@ -24,9 +31,10 @@ function docker_show_ipaddress() {
 function clean() {
     # Clean project
     ${RM} *.zip
+
     # Folders
-    for folder in "venv" "__pycache__" ".ruff_cache" ".pytest_cache" ".cache"; do
-        find . -type d -iname "${folder}" | xargs ${RM}
+    for folder_cryosparc in "venv" "__pycache__" ".ruff_cache" ".pytest_cache" ".cache"; do
+        find . -type d -iname "${folder_cryosparc}" | xargs ${RM}
     done
     # Files
     for file in ".DS_Store" "tags" "db.sqlite3" "*.png" "*.zip" "*.log"; do
@@ -62,27 +70,36 @@ function send() {
     # Send zipped project to osiris using scp
     # ENVIRONMENT VARIABLES:
     #   ZIP_NAME: Name of the zip file
-    #   VPS_URI: URI of the remote server
 
     # Check Arguments
     if [ -z ${ZIP_NAME+x} ]; then ZIP_NAME='cryosparc.zip'; fi
-    if [ -z ${VPS_URI+x} ]; then VPS_URI='osiris_lapes:/home/lapes/repos'; fi
 
-    folder="~/repos/cryosparc"
+    folder_name="${ZIP_NAME[@]/.zip/}"
+    folder_cryosparc="~/repos/${folder_name}"
+    folder_repos="~/repos/"
     zip_remote_filepath="~/repos/${ZIP_NAME}"
 
     # Clean remote directory
-    ssh osiris_lapes "rm -rfd ${folder}" && printf "${GREEN}Cleaned remote directory${NC}\n"
+    ssh osiris_lapes "if [ -d ${folder_cryosparc} ]; then rm -rfd ${folder_cryosparc}; fi" && printf "${GREEN}Cleaned remote directory${NC}\n"
 
     # Send zip
-    scp "${ZIP_NAME}" "${VPS_URI}" && printf "${GREEN}Sent zip${NC}\n" || die "Failed to send zip"
+    scp "${ZIP_NAME}" "osiris_lapes:${folder_repos}" && printf "${GREEN}Sent zip${NC}\n"
 
     # Unzip
-    ssh osiris_lapes "unzip /home/lapes/repos/cryosparc.zip -d /home/lapes/repos/cryosparc" && printf "${GREEN}Unzipped${NC}\n"
+    ssh osiris_lapes "unzip ${zip_remote_filepath} -d ${folder_cryosparc}" && printf "${GREEN}Unzipped${NC}\n" || die "Failed to unzip"
 
     # Remove zip locally and remotely
-    ssh osiris_lapes "rm -rfd ${zip_remote_filepath}" && printf "${GREEN}Removed zip remotely${NC}\n"
+    ssh osiris_lapes "rm ${zip_remote_filepath}" && printf "${GREEN}Removed zip remotely${NC}\n"
     rm ${ZIP_NAME} && printf "${GREEN}Removed zip locally${NC}\n"
+}
+
+function build_push_cryosparc_on_remote() {
+    # Build and push cryosparc on remote server
+
+    folder_cryosparc="~/repos/cryosparc"
+
+    # Build and push cryosparc
+    ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
 }
 
 function help() {
