@@ -147,7 +147,7 @@ def create_job_object(args: Namespace):
     # Create the specification of deployment
     spec = client.V1JobSpec(
         template=template,
-        backoff_limit=10,  # TODO: Make it less
+        backoff_limit=0,  # TODO: Make it less
     )
     # Instantiate the job object
     job = client.V1Job(
