@@ -1,6 +1,26 @@
-ZIP_NAME='cryosparc.zip'
-VPS_URI='osiris_lapes:/home/lapes/repos'
+#!/bin/bash
 
+RM="rm -rfd"
+RED='\033[0;31m'
+NC='\033[0m'
+GREEN='\033[0;32m'
+
+function clean_kubernetes() {
+    kubectl delete deploy/
+    kubectl delete pods --all
+    kubectl delete jobs --all
+}
+
+function docker_show_ipaddress() {
+    # Show ip address of running containers
+    for docker_container in $(docker ps -aq); do
+        CMD1="$(docker ps -a | grep "${docker_container}" | grep --invert-match "Exited\|Created" | awk '{print $2}'): "
+        if [ ${CMD1} != ": " ]; then
+            printf "${CMD1}"
+            printf "$(docker inspect ${docker_container} | grep "IPAddress" | tail -n 1)\n"
+        fi
+    done
+}
 function clean() {
     # Clean project
     ${RM} *.zip
@@ -22,6 +42,12 @@ function tags() {
 
 function pack() {
     # Pack project
+    # ENVIRONMENT VARIABLES:
+    #   ZIP_NAME: Name of the zip file
+
+    # check if zip name is set
+    if [ -z ${ZIP_NAME+x} ]; then ZIP_NAME='cryosparc.zip'; fi
+
     clean
     zip -r "${ZIP_NAME}" \
         deploy \
@@ -35,6 +61,15 @@ function pack() {
 
 function send() {
     # Send zipped project to osiris using scp
+    # ENVIRONMENT VARIABLES:
+    #   ZIP_NAME: Name of the zip file
+    #   VPS_URI: URI of the remote server
+
+    # check if zip name is set
+    if [ -z ${ZIP_NAME+x} ]; then ZIP_NAME='cryosparc.zip'; fi
+    # check if vps uri is set
+    if [ -z ${VPS_URI+x} ]; then VPS_URI='osiris_lapes:/home/lapes/repos'; fi
+
     scp "${ZIP_NAME}" "${VPS_URI}"
     rm ${ZIP_NAME}
 }
@@ -42,7 +77,7 @@ function send() {
 function help() {
     # Print usage on stdout
     echo "Available functions:"
-    for file in ./scripts/*.sh; do
+    for file in ${BASH_SOURCE[0]}; do
         function_names=$(cat ${file} | grep -E "(\ *)function\ +.*\(\)\ *\{" | sed -E "s/\ *function\ +//" | sed -E "s/\ *\(\)\ *\{\ *//")
         for func_name in ${function_names[@]}; do
             printf "    $func_name\n"

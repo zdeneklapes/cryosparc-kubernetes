@@ -1,13 +1,15 @@
-apiVersion: v1
 kind: Service
+apiVersion: v1
 metadata:
   name: cryosparc-svc
+
   labels:
     name: cryosparc-svc
 spec:
   type: ClusterIP
   selector:
     app: cryosparc
+  # Connecting ports for cryosparc application (8080) and cryosparc web (80)
   ports:
     - name: cryosparc-port
       protocol: TCP

@@ -6,10 +6,22 @@ import shlex
 import json
 from pprint import pprint
 import yaml
+import re
 
 from kubernetes import client, config
 from kubernetes.client.models import V1Job
 from argparse import ArgumentParser, Namespace
+# from logging import getLogger
+import logging
+
+# set logger to file /tmp/cryosparc.log
+logging.basicConfig(filename='/tmp/cryosparc.log',
+                    filemode='a',
+                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.DEBUG)
+logging.info("Running Urban Planning")
+logger = logging.getLogger('urbanGUI')
 
 
 def get_command_output(response: V1Job, args: Namespace) -> str:
@@ -107,22 +119,20 @@ def create_job_object(args: Namespace):
             requests={"cpu": args.num_cpu, "memory": args.memory},
             limits={"cpu": args.num_cpu, "memory": args.memory, "nvidia.com/gpu": args.num_gpu},
         ),
-        # TODO
-        # volume_mounts=[
-        #     client.V1VolumeMount(
-        #         name="vol-1",
-        #         mount_path="/mnt/data"
-        #     )
-        # ]
+        volume_mounts=[
+            client.V1VolumeMount(
+                name="cryosparc-volume-1",
+                mount_path="/mnt"
+            )
+        ]
     )
     volumes = [
-        # TODO
-        # client.V1Volume(
-        #     name="vol-1",
-        #     persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-        #         claim_name="pvc-data"
-        #     )
-        # )
+        client.V1Volume(
+            name="cryosparc-volume-1",
+            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                claim_name="pvc-cryosparc-scratch"
+            )
+        )
     ]
     # Create and configure a spec section
     template = client.V1PodTemplateSpec(
@@ -137,7 +147,7 @@ def create_job_object(args: Namespace):
     # Create the specification of deployment
     spec = client.V1JobSpec(
         template=template,
-        backoff_limit=0,
+        backoff_limit=10,  # TODO: Make it less
     )
     # Instantiate the job object
     job = client.V1Job(
@@ -199,7 +209,19 @@ def parse_arguments():
     if _args.job_name == "" or _args.job_name is None or _args.job_name.startswith("-"):
         # print("Generating random job name")
         _args.job_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=7))
+    else:
+        _args.job_name = _args.job_name.lower()
+
+    # validate job_name; regex: "[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"
+    regex = re.compile("[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*")
+    if not regex.match(_args.job_name):
+        print("Job name is invalid. Job name must match regex: %s" % regex.pattern)
+        exit(1)
+
     # print(_args.job_name)
+    logger.debug(_args)
+    logger.debug("aaa")
+    logger.info("aaa")
     return _args
 
 
