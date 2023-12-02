@@ -33,9 +33,12 @@ RUN fakeroot addgroup --gid 1000 cryo &&  fakeroot adduser --gid 1000 --uid 1000
 # Install master and worker
 RUN mkdir /opt/cryosparc_database && \
     curl -L https://get.cryosparc.com/download/master-latest/$LICENSE_ID -o /opt/cryosparc_master.tar.gz && \
-    curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o /opt/cryosparc_worker.tar.gz && \
-    tar xzvf /opt/cryosparc_master.tar.gz -C /opt/ && \
-    tar xzvf /opt/cryosparc_worker.tar.gz -C /opt/
+    curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o /opt/cryosparc_worker.tar.gz
+
+RUN tar xzvf /opt/cryosparc_master.tar.gz -C /opt/ && \
+    tar xzvf /opt/cryosparc_worker.tar.gz -C /opt/ && \
+    rm /opt/cryosparc_master.tar.gz && \
+    rm /opt/cryosparc_worker.tar.gz
 
 #RUN cd /opt/cryosparc_master && ./install.sh --license $LICENSE_ID --yes --dbpath /opt/cryosparc_database --port 8080 --hostname 127.0.0.1
 
