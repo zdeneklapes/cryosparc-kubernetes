@@ -118,7 +118,11 @@ def create_job_object(args: Namespace):
         ),
         resources=client.V1ResourceRequirements(
             requests={"cpu": args.num_cpu, "memory": args.memory},
-            limits={"cpu": args.num_cpu, "memory": args.memory, "nvidia.com/mig-1g.10gb": args.num_gpu}
+            limits={
+                "cpu": args.num_cpu,
+                "memory": args.memory,
+                args.name_gpu: args.num_gpu,
+            }
         ),
         volume_mounts=[
             client.V1VolumeMount(
@@ -191,6 +195,10 @@ def parse_arguments():
     )  # TODO: Check if job already exists, if so, generate new name
     args.add_argument('--namespace', type=str, default="default", help="Name of the job")
     args.add_argument("--image", type=str, default="ubuntu:22.04", help="Container image to use")
+
+    # "nvidia.com/mig-1g.10gb" | "nvidia.com/gpu"
+    args.add_argument('--name-gpu', type=str, default="nvidia.com/gpu", help="Name of the GPU resource")
+
     args.add_argument("--num-cpu", type=int, default=1, help="Number of CPU cores to use")
     args.add_argument("--num-gpu", type=int, default=1, help="Number of GPU cores to use")
     args.add_argument("--memory", type=str, default="10Gi", help="Memory to use")

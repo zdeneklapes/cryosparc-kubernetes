@@ -1,0 +1,40 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: pod-ubuntu-22-04
+spec:
+  containers:
+    - name: ubuntu-22-04
+      image: ubuntu:22.04
+      imagePullPolicy: Always
+      command: [ "/bin/bash", "-c" ]
+      args: [ "while :; do sleep 10000; done" ]
+      #          env:
+      #            - name: COMPOSE_HTTP_TIMEOUT
+      #              value: "480"
+      ports:
+        - containerPort: 8080
+      resources:
+        requests:
+          memory: "4Gi"
+          cpu: "2"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+          nvidia.com/gpu: "1" # NOTE: Not neccecary here
+      securityContext: # Container security context
+        runAsNonRoot: true
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      volumeMounts:
+        - name: vol-1
+          mountPath: /mnt
+  volumes:
+    - name: vol-1
+      persistentVolumeClaim:
+        claimName: pvc-cryosparc-scratch
