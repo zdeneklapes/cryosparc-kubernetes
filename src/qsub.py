@@ -106,7 +106,8 @@ def create_job_object(args: Namespace):
     container = client.V1Container(
         name=args.job_name,
         image=args.image,
-        command=command,
+        command=[command[0]],
+        args=command[1:],
         security_context=client.V1SecurityContext(
             run_as_user=1000,
             # run_as_group=1000,
@@ -117,7 +118,7 @@ def create_job_object(args: Namespace):
         ),
         resources=client.V1ResourceRequirements(
             requests={"cpu": args.num_cpu, "memory": args.memory},
-            limits={"cpu": args.num_cpu, "memory": args.memory},
+            limits={"cpu": args.num_cpu, "memory": args.memory, "nvidia.com/mig-1g.10gb": args.num_gpu}
         ),
         volume_mounts=[
             client.V1VolumeMount(
@@ -189,9 +190,9 @@ def parse_arguments():
         help="Name of the job"
     )  # TODO: Check if job already exists, if so, generate new name
     args.add_argument('--namespace', type=str, default="default", help="Name of the job")
-    args.add_argument("--image", type=str, default="busybox:1.28", help="Container image to use")
-    args.add_argument("--num-cpu", type=str, default="1", help="Number of CPU cores to use")
-    args.add_argument("--num-gpu", type=str, default=0, help="Number of GPU cores to use")
+    args.add_argument("--image", type=str, default="ubuntu:22.04", help="Container image to use")
+    args.add_argument("--num-cpu", type=int, default=1, help="Number of CPU cores to use")
+    args.add_argument("--num-gpu", type=int, default=1, help="Number of GPU cores to use")
     args.add_argument("--memory", type=str, default="10Gi", help="Memory to use")
     args.add_argument("--walltime", type=str, default="02:00:00", help="Walltime")
     args.add_argument("--scratch-local", type=str, default="1000Mi", help="Number of GPU cores to use")

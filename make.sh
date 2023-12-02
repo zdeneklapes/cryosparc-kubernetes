@@ -56,7 +56,6 @@ function pack() {
     # check if zip name is set
     if [ -z ${ZIP_NAME+x} ]; then ZIP_NAME='cryosparc.zip'; fi
 
-    clean
     zip -r "${ZIP_NAME}" \
         deploy \
         src \
