@@ -98,10 +98,7 @@ function build_push_cryosparc_on_remote() {
     folder_cryosparc="~/repos/cryosparc"
 
     # Build and push cryosparc master image
-#    ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
-
-    # Build and push cryosparc master and worker image
-    ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc_mw . && docker push cerit.io/cerit/cryosparc:mw-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+    ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc_mw_v2 . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
 }
 
 function help() {

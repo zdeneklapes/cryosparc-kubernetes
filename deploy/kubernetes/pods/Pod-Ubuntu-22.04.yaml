@@ -1,11 +1,11 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  name: pod-ubuntu-22-04
+  name: pod-cryosparc-ubuntu-22-04
 spec:
   containers:
-    - name: ubuntu-22-04
-      image: ubuntu:22.04
+    - name: cryosparc-ubuntu-22-04
+      image: cerit.io/cerit/cryosparc:master-v0.2
       imagePullPolicy: Always
       command: [ "/bin/bash", "-c" ]
       args: [ "while :; do sleep 10000; done" ]
@@ -21,12 +21,13 @@ spec:
         limits:
           memory: "4Gi"
           cpu: "2"
-          nvidia.com/gpu: "1" # NOTE: Not neccecary here
+#          nvidia.com/gpu: "1" # NOTE: Not neccecary here
+          nvidia.com/mig-1g.10gb: "1" # NOTE: Not neccecary here
       securityContext: # Container security context
-        privileged: true
+#        privileged: true
         runAsNonRoot: true
         runAsUser: 1000
-#        allowPrivilegeEscalation: true
+        allowPrivilegeEscalation: false
         capabilities:
           drop:
             - ALL

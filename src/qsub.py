@@ -194,10 +194,12 @@ def parse_arguments():
         help="Name of the job"
     )  # TODO: Check if job already exists, if so, generate new name
     args.add_argument('--namespace', type=str, default="default", help="Name of the job")
-    args.add_argument("--image", type=str, default="ubuntu:22.04", help="Container image to use")
+    args.add_argument("--image", type=str, default="cerit.io/cerit/cryosparc:master-v0.2", help="Image name")
 
-    # "nvidia.com/mig-1g.10gb" | "nvidia.com/gpu"
-    args.add_argument('--name-gpu', type=str, default="nvidia.com/gpu", help="Name of the GPU resource")
+    args.add_argument('--name-gpu', type=str,
+                      # default="nvidia.com/gpu",
+                      default="nvidia.com/mig-1g.10gb",
+                      help="Name of the GPU resource")
 
     args.add_argument("--num-cpu", type=int, default=1, help="Number of CPU cores to use")
     args.add_argument("--num-gpu", type=int, default=1, help="Number of GPU cores to use")

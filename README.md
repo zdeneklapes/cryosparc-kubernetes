@@ -24,6 +24,8 @@ The default username/email is `a@a.com` and the default password is `a`.
 
 ## Create a new image
 
+The IP for `ssh` command must be changed (for you) inside the called functions _(It is setup for me right now)_
+
 ```bash
 ./make.sh pack send build_push_cryosparc_on_remote
 ```

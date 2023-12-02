@@ -1,6 +1,6 @@
 {
-    "name" : "pbscluster",
-    "worker_bin_path" : "/tmp/cryosparcw",
+    "name" : "kubernetes-jobs",
+    "worker_bin_path" : "/opt/cryosparc_worker/bin/cryosparcw",
     "cache_path" : "/tmp/cryosparc_cache",
     "send_cmd_tpl" : "{{ command }}",
     "qsub_cmd_tpl" : "qsub.py --run-cmd=\"/bin/bash {{ script_path_abs }}\" --job-name={{ project_uid }}-{{ job_uid }} --namespace=zdeneklapeseinfracesnetcz-ns",
