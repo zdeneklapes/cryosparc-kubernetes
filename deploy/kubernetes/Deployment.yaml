@@ -19,7 +19,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: cryosparc
+        - name: cryosparc-master-container
           image: cerit.io/cerit/cryosparc:master-v0.2
           imagePullPolicy: Always
           command: [ "/bin/bash", "-c" ]

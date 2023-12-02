@@ -11,11 +11,14 @@ kubectl apply -f deploy/kubernetes
 kubectl apply -f deploy/kubernetes/pvc
 ```
 
+When all configuration files are applied, the application can be accessed on [cryosparc.dyn.cloud.e-infra.cz](cryosparc.dyn.cloud.e-infra.cz).
+
+The default username/email is `a@a.com` and the default password is `a`.
+
 ## Delete
 ```bash
 ./make.sh clean_kubernetes
 ```
-
 
 # Usage:
 
