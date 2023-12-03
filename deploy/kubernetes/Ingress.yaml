@@ -16,7 +16,7 @@ spec:
               service:
                 name: cryosparc-service # Service - metadata.labels.name
                 port:
-                  number: 80
+                  number: 80 # Service - spec.ports.port
 #            path: /
             pathType: ImplementationSpecific
   tls:

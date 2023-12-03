@@ -94,11 +94,32 @@ function send() {
 
 function build_push_cryosparc_on_remote() {
     # Build and push cryosparc on remote server
+    # ENVIRONMENT VARIABLES:
+    #   M= 1/0 - Build and push cryosparc master image
+    #   W= 1/0 - Build and push cryosparc worker image
+    #   MW= 1/0 - Build and push cryosparc master and worker image
+
+    # Check Arguments
+    if [ -z ${M+x} ]; then M=1; fi
+    if [ -z ${W+x} ]; then W=1; fi
+    if [ -z ${MW+x} ]; then MW=1; fi
 
     folder_cryosparc="~/repos/cryosparc"
 
     # Build and push cryosparc master image
-    ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc_mw_v2 . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+    if [ ${M} -eq 1 ]; then
+        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc_m_v2 . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+    fi
+
+    # Build and push cryosparc worker image
+    if [ ${W} -eq 1 ]; then
+        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:worker-v0.2 -f deploy/docker/Dockerfile_cryosparc_w_v2 . && docker push cerit.io/cerit/cryosparc:worker-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+    fi
+
+    # Build and push cryosparc master and worker image
+    if [ ${MW} -eq 1 ]; then
+        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-worker-v0.2 -f deploy/docker/Dockerfile_cryosparc_mw_v2 . && docker push cerit.io/cerit/cryosparc:master-worker-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+    fi
 }
 
 function help() {

@@ -6,11 +6,12 @@ spec:
   replicas: 1 # TODO: Change to 3
   selector:
     matchLabels:
-      app: cryosparc
+      app: cryosparc-web-deployment
   template:
     metadata:
       labels:
-        app: cryosparc
+        app: cryosparc-web-deployment
+      name: cryosparc-web-deployment-pod
     spec:
       restartPolicy: Always
       securityContext: # Pod security context
@@ -20,10 +21,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cryosparc-master-container
-          image: cerit.io/cerit/cryosparc:master-v0.2
+          image: cerit.io/cerit/cryosparc:master-worker-v0.2
           imagePullPolicy: Always
           command: [ "/bin/bash", "-c" ]
-          args: [ "/opt/cryosparc_master/entrypoints/entrypoint.sh" ]
+          args: [ "/opt/cryosparc_master/entrypoints/entrypoint.sh start_master create_user start_worker heartbeat" ]
 #          env:
 #            - name: COMPOSE_HTTP_TIMEOUT
 #              value: "480"
@@ -37,6 +38,7 @@ spec:
               memory: "4Gi"
               cpu: "2"
 #              nvidia.com/gpu: "1" # NOTE: Not neccecary here
+              nvidia.com/mig-1g.10gb: "1"
           securityContext: # Container security context
             runAsUser: 1000
             allowPrivilegeEscalation: false

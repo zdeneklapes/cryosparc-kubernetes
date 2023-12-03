@@ -5,12 +5,12 @@ metadata:
   labels:
     name: cryosparc-service # Filter Ingress - spec.rules.http.backend.service.name
 spec:
-  type: ClusterIP
+  type: ClusterIP # Default
   selector:
-    app: cryosparc
+    app: cryosparc-web-deployment # Filter Deployment - spec.template.metadata.labels.app
   # Connecting ports for cryosparc application (8080) and cryosparc web (80)
   ports:
     - name: cryosparc-port
       protocol: TCP
-      targetPort: 8080
-      port: 80
+      targetPort: 8080 # ContainerPort - spec.template.spec.containers.ports.containerPort
+      port: 80 # Ingress - spec.rules.http.backend.service.port.number
