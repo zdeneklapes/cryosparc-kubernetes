@@ -55,6 +55,7 @@ function start_worker() {
     export CRYOSPARC_MASTER_HOSTNAME=${CRYOSPARC_MASTER_HOSTNAME:-$(hostname -s)}
     echo "setting CRYOSPARC_MASTER_HOSTNAME=${CRYOSPARC_MASTER_HOSTNAME}"
 
+    export USER="a"
     cd ${CRYOSPARC_WORKER_DIR}
     ${CRYOSPARC_WORKER_DIR}/bin/cryosparcw connect \
         --worker ${CRYOSPARC_MASTER_HOSTNAME} \

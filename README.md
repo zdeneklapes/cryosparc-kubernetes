@@ -5,7 +5,7 @@ This is a collection of scripts and configuration files to deploy cryosparc on k
 # Installation
 Entrypoints and templates are located in the `entrypoints` directory.
 
-## Apply
+## Apply configuration files
 ```bash
 kubectl apply -f deploy/kubernetes
 kubectl apply -f deploy/kubernetes/pvc
@@ -15,12 +15,10 @@ When all configuration files are applied, the application can be accessed on [cr
 
 The default username/email is `a@a.com` and the default password is `a`.
 
-## Delete
+## Delete resources
 ```bash
 ./make.sh clean_kubernetes
 ```
-
-# Usage:
 
 ## Create a new image
 
@@ -28,6 +26,13 @@ The IP for `ssh` command must be changed (for you) inside the called functions _
 
 ```bash
 ./make.sh pack send build_push_cryosparc_on_remote
+```
+
+
+## Run all at once
+
+```bash
+M=0 W=0 MW=1 ./make.sh pack send build_push_cryosparc_on_remote clean_kubernetes; k apply -f deploy/kubernetes/
 ```
 
 # Other resources
