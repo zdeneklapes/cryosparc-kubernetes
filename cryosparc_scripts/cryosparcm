@@ -1,0 +1,2231 @@
+#!/usr/bin/env bash
+#
+# cryosparcm
+#
+# CryoSPARC daemon manager
+# Only available on master - used to start, stop and configure cryosparc master .
+# This script is updated during a master update. The configuration done by this script
+# must remain constant while cryosparc system is running. Other configuration can
+# be changed on the fly and is stored in the database.
+#
+# Instance-specific environment variables can be set in config.sh (which is empty by
+# default) and those variables are read in when this script runs.
+
+
+set -e
+OS_NAME="$(uname -s)"
+
+# remember starting dir
+initial_dir=$(pwd)
+
+# figure out where this script lives
+script_dir="$( cd "$(dirname "$0")" ; pwd -P )"
+
+# get to cryosparc root dir
+cd "$script_dir"/../
+root_dir=$(pwd -P)
+
+install_error() {
+    echo "ERROR: Is cryoSPARC installed? Run install.sh to complete installation. See https://guide.cryosparc.com for full instructions."  >&2
+    exit 1
+}
+
+# get instance-specific global constant environment variables
+source config.sh || install_error
+
+# set up global constant environment variables (all start with CRYOSPARC_)
+export CRYOSPARC_ROOT_DIR=$root_dir
+export CRYOSPARC_PATH="$CRYOSPARC_ROOT_DIR/bin"
+export CRYOSPARC_PATH="$CRYOSPARC_ROOT_DIR/deps/external/mongodb/bin:$CRYOSPARC_PATH"
+if [[ $CRYOSPARC_DEVELOP = "true" ]] ; then
+    export CRYOSPARC_PATH="$CRYOSPARC_ROOT_DIR/deps/meteor/bin:$CRYOSPARC_PATH"
+else
+    export CRYOSPARC_DEVELOP="false"
+fi
+
+export CRYOSPARC_CONDA_ENV="cryosparc_master_env"
+
+activate_conda_env() {
+    if [[ -f "$CRYOSPARC_ROOT_DIR/deps/anaconda/etc/profile.d/conda.sh" ]]; then
+        source "$CRYOSPARC_ROOT_DIR/deps/anaconda/etc/profile.d/conda.sh"
+        conda activate $CRYOSPARC_CONDA_ENV || echo "Warning: Could not activate conda environment; this indicates that a cryoSPARC installation is either incomplete or in progress" 1>&2
+    else
+        echo "Warning: conda environment not found; this indicates that a cryoSPARC installation is either incomplete or in progress" 1>&2
+    fi
+}
+
+deactivate_conda_env() {
+    if command -v conda > /dev/null 2>&1; then
+        conda deactivate > /dev/null 2>&1 || true  # ignore any errors
+    fi
+    unset _CE_CONDA
+    unset CONDA_DEFAULT_ENV
+    unset CONDA_EXE
+    unset CONDA_PREFIX
+    unset CONDA_PROMPT_MODIFIER
+    unset CONDA_PYTHON_EXE
+    unset CONDA_SHLVL
+    unset PYTHONPATH
+}
+
+get_full_hostname() {
+    if hostname -f >/dev/null 2>&1; then
+        echo -e "$(hostname -f)" | tr -d '[:space:]'
+    elif uname -n >/dev/null 2>&1; then
+        echo -e "$(uname -n)" | tr -d '[:space:]'
+    else
+        echo "Warning: Unable to determine full hostname. Defaulting to localhost." >&2
+        echo -n "localhost"
+    fi
+}
+
+# always deactivate existing environments
+deactivate_conda_env
+
+# these are supposed to be in config.sh but have defaults here too:
+if [[ -z "$CRYOSPARC_BASE_PORT" ]]; then
+    echo "CRYOSPARC_BASE_PORT was not set! "
+    exit 1
+fi
+if [[ -z "$CRYOSPARC_DB_PATH" ]]; then
+    echo "CRYOSPARC_DB_PATH was not set! "
+    exit 1
+fi
+export CRYOSPARC_BASE_PORT=$CRYOSPARC_BASE_PORT
+export CRYOSPARC_DB_PATH=$CRYOSPARC_DB_PATH
+master_hostname_trim=$(get_full_hostname)
+export CRYOSPARC_MASTER_HOSTNAME=${CRYOSPARC_MASTER_HOSTNAME:-"$master_hostname_trim"}
+
+# more global constants that are set at start time, derived from above
+root_dir_hash=$(echo -n $CRYOSPARC_ROOT_DIR | md5sum | awk '{print $1}')
+export CRYOSPARC_SUPERVISOR_SOCK_FILE=${CRYOSPARC_SUPERVISOR_SOCK_FILE:-"/tmp/cryosparc-supervisor-$root_dir_hash.sock"}
+export CRYOSPARC_HTTP_APP_PORT=$CRYOSPARC_BASE_PORT
+export CRYOSPARC_MONGO_PORT=$[$CRYOSPARC_BASE_PORT+1]
+export CRYOSPARC_COMMAND_CORE_PORT=$[$CRYOSPARC_BASE_PORT+2]
+export CRYOSPARC_COMMAND_VIS_PORT=$[$CRYOSPARC_BASE_PORT+3]
+# export CRYOSPARC_COMMAND_PROXY_PORT=$[$CRYOSPARC_BASE_PORT+4] # not used, can be repurposed
+export CRYOSPARC_COMMAND_RTP_PORT=$[$CRYOSPARC_BASE_PORT+5]
+export CRYOSPARC_HTTP_LIVEAPP_LEGACY_PORT=$[$CRYOSPARC_BASE_PORT+6]
+# mongodb tuning params (can be overrriden in config.sh)
+export CRYOSPARC_MONGO_CACHE_GB=${CRYOSPARC_MONGO_CACHE_GB:-"4"}
+export CRYOSPARC_HEARTBEAT_SECONDS=${CRYOSPARC_HEARTBEAT_SECONDS:-"180"}
+export CRYOSPARC_LIVE_ENABLED="true"
+export CRYOSPARC_FORCE_USER=${CRYOSPARC_FORCE_USER:-"false"}
+export CRYOSPARC_FORCE_HOSTNAME=${CRYOSPARC_FORCE_HOSTNAME:-"false"}
+export CRYOSPARC_HOSTNAME_CHECK=${CRYOSPARC_HOSTNAME_CHECK:-$master_hostname_trim}
+# db stuff
+export CRYOSPARC_DB_ENABLE_AUTH=${CRYOSPARC_DB_ENABLE_AUTH:-true}
+export CRYOSPARC_DB_ENABLE_AUTH_FLAG=$($CRYOSPARC_DB_ENABLE_AUTH && echo '--auth' || echo '')
+export CRYOSPARC_DB_CONNECTION_TIMEOUT_MS=${CRYOSPARC_DB_CONNECTION_TIMEOUT_MS:-20000}
+# MongoDB featureCompatibilityVersion
+export CRYOSPARC_MONGO_FCV=3.6
+# MongoDB extra flags
+export CRYOSPARC_MONGO_EXTRA_FLAGS=${CRYOSPARC_MONGO_EXTRA_FLAGS:-""}
+# cluster job monitoring
+export CRYOSPARC_CLUSTER_JOB_MONITOR_INTERVAL=${CRYOSPARC_CLUSTER_JOB_MONITOR_INTERVAL:-10}
+export CRYOSPARC_CLUSTER_JOB_MONITOR_MAX_RETRIES=${CRYOSPARC_CLUSTER_JOB_MONITOR_MAX_RETRIES:-1000000}
+# project creation settings
+export CRYOSPARC_PROJECT_DIR_PREFIX=${CRYOSPARC_PROJECT_DIR_PREFIX:-"CS-"}
+
+# Only activate the conda env if this is not an update
+if [[ $1 != update ]] && [[ $1 != install ]] && [[ $1 != downloadtest ]] && [[ $1 != deps ]] && [[ $1 != forcedeps ]] ; then
+    activate_conda_env
+    # Set shell variables
+    # Clear out LD_PRELOAD so that if cryosparm or cryosparcw are called with [mutual] recursion, they don't interfere with each other
+    export LD_PRELOAD=""
+    for lib in libpython3.8.so ; do
+        lib_path="$CRYOSPARC_ROOT_DIR/deps/anaconda/envs/$CRYOSPARC_CONDA_ENV/lib/$lib"
+        if [[ -f "$lib_path" ]] ; then
+            export LD_PRELOAD="$lib_path${LD_PRELOAD:+:$LD_PRELOAD}"
+        fi
+    done
+    export PYTHONPATH="$CRYOSPARC_ROOT_DIR"
+    export PYTHONNOUSERSITE=true
+    # not sure if this is necessary:
+    export MKL_NUM_THREADS=1
+    export NUMEXPR_NUM_THREADS=1
+    export OMP_NUM_THREADS=1
+fi
+
+export PATH="$CRYOSPARC_PATH:$PATH"
+
+activate_database_env() {
+    # mongo URIs for the app
+    # can only run if conda env is active
+    export CRYOSPARC_APP_MONGO_URI=$(python -c "from cryosparc_compute import database_management; print(database_management.get_mongo_uri('meteor'))")
+    export CRYOSPARC_APP_MONGO_OPLOG_URI=$(python -c "from cryosparc_compute import database_management; print(database_management.get_mongo_uri('local'))")
+}
+
+check_owner () {
+    # Check for correct user
+    file_owner="$(stat --format '%U' ".")"
+    current_user="$(id -u -n)"
+    if [[ "${file_owner}" != "${current_user}" ]] && [[ "$CRYOSPARC_FORCE_USER" = "false" ]]; then
+        echo "ERROR: This command can only be called by the owner of this script: ${file_owner}. You are ${current_user}!" >&2
+        echo "Alternatively, set CRYOSPARC_FORCE_USER=true in cryosparc_master/config.sh to suppress this error." >&2
+        exit 1
+    fi
+}
+
+check_hostname() {
+    # Check for correct host
+    if [[ "${CRYOSPARC_HOSTNAME_CHECK}" != "${CRYOSPARC_MASTER_HOSTNAME}" ]] && [[ "$CRYOSPARC_FORCE_HOSTNAME" = "false" ]]; then
+            echo "ERROR: Re-run this command on the master node: ${CRYOSPARC_MASTER_HOSTNAME}." >&2
+            echo "Alternatively, set CRYOSPARC_FORCE_HOSTNAME=true in cryosparc_master/config.sh to suppress this error." >&2
+            echo "If this error message is incorrect, set CRYOSPARC_HOSTNAME_CHECK to the correct hostname in cryosparc_master/config.sh." >&2
+            exit 1
+    fi
+}
+
+ensure_cryosparc_running() {
+    ERROR_MESSAGE="$1"
+    EXIT="$2"
+    local status_exit_code
+    local status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || status_exit_code=$?
+    if [[ "$status_res" == *"no such file"* ]] ; then
+        echo "CryoSPARC is not already running."
+        echo "$ERROR_MESSAGE"
+        if [[ "$EXIT" = "true" ]]; then
+            exit 0
+        fi
+    else
+        echo "CryoSPARC is running."
+    fi
+}
+
+ensure_cryosparc_not_running() {
+    ERROR_MESSAGE="$1"
+    EXIT="$2"
+    local status_exit_code
+    local status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || status_exit_code=$?
+    if [[ "$status_res" == *"no such file"* ]] ; then
+        echo "CryoSPARC is not already running."
+    else
+        echo "CryoSPARC is running."
+        echo "$ERROR_MESSAGE"
+        if [[ "$EXIT" = "true" ]]; then
+            exit 0
+        fi
+    fi
+}
+
+# Requires conda environment to be activated
+finish_deps() {
+    # libtiff has a compilation step on first import where it writes a file to
+    # its installation directory. The following ensures the file is available
+    # immediately after installation, rather than at runtime when write
+    # permissions may no longer be available.
+    python -c "import libtiff"
+}
+
+# Call this immediately after extracting the tarball.
+#
+# If changing this code for releases of cryoSPARC close to v3.0,
+# check the following:
+#   1. Any Python 2 that executes should run in Python 2 and 3
+#   2. Any cryosparcm calls should run cryoSPARC v2 and v3 (e.g., start)
+finish_install() {
+    export LD_PRELOAD=""
+    cd "$CRYOSPARC_ROOT_DIR"
+
+    if [[ $CRYOSPARC_DEVELOP = "true" ]]; then
+        echo "Developer installation - install command not available"
+        exit 1
+    elif [ ! -f version ]; then
+        echo "Cannot finish install - version file not found"
+        exit 1
+    fi
+
+    local version=$(<version)  # latest installed master tarball version
+    local worker_tarball="cryosparc_worker.tar.gz"
+    local override=false
+    local install_args=()
+    for i in "$@"; do
+        case $i in
+            --override)
+            override=true
+            install_args+=("--override")
+            shift
+            ;;
+            *)
+            echo "Improper usage."
+            exit 1
+        esac
+    done
+
+    if [ -f "cryosparc2_worker.tar.gz" ] ; then
+        # Updating v2 -> v3 because `cryosparcm update` downloaded the old
+        # filename for the new tarball
+        worker_tarball="cryosparc2_worker.tar.gz"
+    fi
+
+    echo " "
+    echo "==================================================="
+    echo "Installing latest master dependencies."
+    echo "==================================================="
+    echo " "
+    # PATH is required here for conda/pip in old Python installer to work
+    export PATH=$CRYOSPARC_ROOT_DIR/deps/anaconda/bin:$PATH
+    export PYTHONPATH=""
+    ./check_install_deps.sh ${install_args[@]}
+    activate_conda_env # prints a warning if downgrading to cryoSPARC v2
+    finish_deps
+
+    echo " "
+    echo "==================================================="
+    echo "Successfully updated master to version $version."
+    echo "==================================================="
+    echo " "
+
+    cryosparcm start --nostartup
+    cryosparcm stop
+    cryosparcm start
+
+    echo " "
+    echo " ==================================================="
+    echo " Now updating worker nodes."
+    echo " ==================================================="
+    echo " "
+    cd $CRYOSPARC_ROOT_DIR
+    python -m install --file "${worker_tarball}" ${install_args[@]}
+
+    echo " ---------------------------------------------------"
+    echo " Done updating all worker nodes."
+    echo " If any nodes failed to update, you can manually update them."
+    echo " Cluster worker installations must be manually updated."
+    echo " "
+    echo " To update manually, copy the ${worker_tarball} file into the"
+    echo " cryosparc worker installation directory, and then run "
+    echo "    $ bin/cryosparcw update "
+    echo " from inside the worker installation directory."
+    echo " "
+}
+
+format_string() {
+    ncolors=$(tput colors)
+    if test -n "$ncolors" && test $ncolors -ge 8; then
+        normal="\e[0;0m"
+        error="\e[0;41m"
+        success="\e[0;92m"
+        if [ "$2" == 'success' ]; then
+            echo -e "${success}$1${normal}"
+        elif [ "$2" == 'error' ]; then
+            echo -e "${error}$1${normal}" >&2
+        fi
+    else
+        if [ "$2" == 'success' ]; then
+            echo "$1"
+        elif [ "$2" == 'error' ]; then
+            echo "$1" >&2
+        fi
+    fi
+}
+
+installation_test() {
+    # Check if user is running script as cryosparcm file owner
+    if check_owner ; then
+        format_string "✓ Running as cryoSPARC owner" "success"
+    else
+        format_string "✕ Not running as cryoSPARC owner" "error"
+        exit 1
+    fi
+
+    # Check if user is running script on cryoSPARC master node
+    if check_hostname ; then
+        format_string "✓ Running on master node" "success"
+    else
+        format_string "✕ Not running on master node" "error"
+        exit 1
+    fi
+
+    # Check if cryoSPARC supervisor is running
+    local status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || status_exit_code=$?
+    if [[ "$status_res" == *"no such file"* ]] ; then
+        format_string "✕ CryoSPARC is not running. CryoSPARC must be running to perform an installation test." "error"
+        exit 1
+    else
+        format_string "✓ CryoSPARC is running" "success"
+    fi
+
+    python -m  cryosparc_command.instance_tests.installation_test
+}
+
+# deal with insecure case:
+curl_opts=""
+if [[ "$CRYOSPARC_INSECURE" = "true" ]] ; then
+    curl_opts="-k "
+fi
+
+case "$1" in
+
+# --------------------------------------------------------------------------------------------
+    help)
+    echo "cryosparcm help"
+
+    echo "
+    cryosparcm start
+      finds open ports
+      sets environment vars for supervisord
+      launches all processes via supervisord
+    
+    cryosparcm stop
+      shut down all child processes
+      shut down supervisord
+    
+    cryosparcm env
+      call as 'eval \$(cryosparcm env)'
+      prints export statements for all CRYOSPARC_* environment variables
+    
+    cryosparcm status [--json]
+      gives json or plain text including
+          current version
+          current master running or not
+          current port numbers if running
+          current root dir
+    
+    cryosparcm backup
+       Backup cryoSPARC database to a specified file.
+            Options:
+                  --dir=<path>         path to output directory
+                                       (run/db_backups/ by default)
+                  --file=<name>        name of output file
+                                       (current datetime by default)
+    "
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    env)
+    vars=$(env | grep '^CRYOSPARC_')
+    while read -r line; do
+        echo 'export "'$line'"'
+    done <<< "$vars"
+    echo 'export "PATH='"$PATH"'"'
+    echo 'export "LD_LIBRARY_PATH='"$LD_LIBRARY_PATH"'"'
+    echo 'export "LD_PRELOAD='"$LD_PRELOAD"'"'
+    echo 'export "PYTHONPATH='"$PYTHONPATH"'"'
+    echo 'export "PYTHONNOUSERSITE='"$PYTHONNOUSERSITE"'"'
+    condavars=$(env | grep '^CONDA_')
+    while read -r line; do
+        echo 'export "'$line'"'
+    done <<< "$condavars"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    cli)
+    cd "$CRYOSPARC_ROOT_DIR"
+    python -m cryosparc_compute.client "$CRYOSPARC_MASTER_HOSTNAME" "$CRYOSPARC_COMMAND_CORE_PORT" "$2"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    rtpcli)
+    cd "$CRYOSPARC_ROOT_DIR"
+    python -m cryosparc_compute.client "$CRYOSPARC_MASTER_HOSTNAME" "$CRYOSPARC_COMMAND_RTP_PORT" "$2"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    icli)
+    cd "$CRYOSPARC_ROOT_DIR"
+    ipython -i setup_client_ipython.py
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    ipython)
+    cd "$CRYOSPARC_ROOT_DIR"
+    ipython
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    mongo)
+    cd "$CRYOSPARC_ROOT_DIR"
+    mongo_uri=$(python -c "from cryosparc_compute import database_management; print(database_management.get_mongo_uri('meteor'))")
+    exec mongo $mongo_uri
+    ;;
+# --------------------------------------------------------------------------------------------
+    db-profiling)
+    shift
+    cd "$CRYOSPARC_ROOT_DIR"
+    case $1 in
+        status)
+            python -c "from cryosparc_compute import database_management; print(database_management.database_profiling('status'))"
+            ;; 
+        off)
+            echo "Disabling database profiling"
+            python -c "from cryosparc_compute import database_management; print(database_management.database_profiling('off'))"
+            ;;
+        slow)
+            threshold=100
+            if [ ! -z "$2" ]; then
+                threshold=$2
+            fi
+            echo "Enabling database profiling for operations taking longer than $threshold ms"
+            python -c "from cryosparc_compute import database_management; print(database_management.database_profiling('slow', $threshold))"
+            ;;
+        all)
+            echo "Enabling database profiling for all operations"
+            python -c "from cryosparc_compute import database_management; print(database_management.database_profiling('all'))"
+            ;;
+        *)
+            echo "Usage: cryosparcm db-profiling [status|off|slow|all]"
+            ;;
+    esac
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    log)
+    cd "$CRYOSPARC_ROOT_DIR"
+    shift
+    log_service="$1"
+    log_file_path="run/$log_service.log"
+    if [ ! -f "$log_file_path" ]; then
+        echo "Invalid service: $log_service" >&2
+        echo "Usage:" >&2
+        echo "    cryosparcm log SERVICE" >&2
+        echo "Where SERVICE is one of:" >&2
+        for f in $(ls run/*.log); do
+            name=$(basename -- "${f}")
+            echo "    ${name%.*}" >&2
+        done
+        exit 1
+    fi
+    exec less +F $log_file_path
+    ;;
+# --------------------------------------------------------------------------------------------
+    filterlog)
+    cd "$CRYOSPARC_ROOT_DIR"
+    shift
+
+    # setup initial vars
+    log_service=""
+    days=7
+    max_lines="None"
+    log_func="filter_log"
+
+    log_usage() {
+        echo "Usage:" >&2
+        echo "    cryosparcm filterlog SERVICE" >&2
+        echo "    cryosparcm filterlog [--days|-d N] [--date|-D YYYY-MM-DD] [--max_lines|-m MAX_LINES] [--name|-n NAME] [--func|-f FUNCTION] [--level|-l LEVEL] [--tail|-t] SERVICE" >&2
+        echo "Where SERVICE is one of:" >&2
+        for f in $(ls run/*.log); do
+            local name=$(basename -- "${f}")
+            echo "    ${name%.*}" >&2
+        done
+        echo "Some flags not available for all services." >&2
+    }
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+            # Show only logs with the given level
+            log_usage
+            exit
+            ;;
+
+            -d|--days)
+            # Show last x days worth of logs
+            shift
+            num_re='^[0-9]+$'
+            if ! [[ $1 =~ $num_re ]] ; then
+                echo "Invalid number of days: $1" >&2
+                log_usage
+                exit 1
+            fi
+            days=$1
+            ;;
+
+            -D|--date)
+            # Show only logs from the given date
+            shift
+            date_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            if ! [[ $1 =~ $date_re ]]; then
+                echo "Invalid date format: $1" >&2
+                log_usage
+                exit 1
+            fi
+            requested_date=$1
+            ;;
+
+            -m|--max_lines)
+            # Max number of lines to return
+            shift
+            max_lines=$1
+            re='^[0-9]+$'
+            if ! [[ $max_lines =~ $re ]] ; then
+            echo "error: max lines is not a number" >&2; exit 1
+            fi
+            ;;
+
+            -n|--name)
+            # Show only logs with the given log name as a prefix (before dots)
+            shift
+            log_name=$1
+            ;;
+
+            -f|--func)
+            # Show only logs with the given log function
+            shift
+            func_name=$1
+            ;;
+
+            -l|--level)
+            # Show only logs with the given level
+            shift
+            level=$1
+            ;;
+
+            -t|--tail)
+            # Tail the log file
+            log_func="tail_log"
+            ;;
+
+            -*|--*)
+            echo "Invalid argument: $1" >&2
+            log_usage
+            exit 1
+            ;;
+
+            *)
+            log_service="$1"
+            ;;
+        esac
+        shift
+    done
+
+    log_file_path="run/$log_service.log"
+    if [ ! -f "$log_file_path" ]; then
+        echo "Invalid service: $log_service" >&2
+        log_usage
+        exit 1
+    fi
+    if [[ -z "$requested_date" ]]; then
+        python -c "from cryosparc_compute.error_reporting import $log_func; print($log_func(service_name=\"$log_service\", days=$days, max_lines=$max_lines, log_name=\"$log_name\", func_name=\"$func_name\", level=\"$level\"))"
+    else
+        python -c "from cryosparc_compute.error_reporting import $log_func; print($log_func(service_name=\"$log_service\", date=\"$requested_date\", max_lines=$max_lines, log_name=\"$log_name\", func_name=\"$func_name\", level=\"$level\"))"
+    fi
+
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    joblog)
+    cd "$CRYOSPARC_ROOT_DIR"
+    job_log_path=$(cryosparcm cli "get_job_log_path_abs('$2','$3')")
+    exec less +F $job_log_path
+    ;;
+# --------------------------------------------------------------------------------------------
+    eventlog)
+    cryosparcm cli "get_job_streamlog('$2','$3')" | exec python -c "
+import sys
+for e in eval(sys.stdin.read()):
+  mem = e.get('cpumem_mb', 0)
+  mem_string = f'[CPU RAM used: {mem:.0f} MB]' if mem else ''
+  text = e.get('text', '')
+  if mem_string or text:
+	  print(f'{mem_string} {text}'.strip())"
+    ;;
+# --------------------------------------------------------------------------------------------
+    snaplogs)
+    snap_output=${CRYOSPARC_ROOT_DIR}/run/cryosparc_logs_$(date +%Y%m%d%H%M%S).tgz
+    tar zcvf $snap_output ${CRYOSPARC_ROOT_DIR}/run/*.log ${CRYOSPARC_ROOT_DIR}/config.sh
+    if [ $? -eq 0 ];then
+        echo "Created log archive in $snap_output."
+        exit 0
+    else
+        exit_code=$?
+        echo "Something went wrong."
+        exit $exit_code
+    fi
+    ;;
+# --------------------------------------------------------------------------------------------
+    deps)
+    check_owner
+    if [[ $CRYOSPARC_DEVELOP = "true" ]] ; then
+        echo "Use install_deps.sh only"
+        exit 1
+    fi
+    export LD_PRELOAD=""
+    export PYTHONPATH=""
+    if [[ $(python --version 2>&1 || echo "noop") == Python\ 2.* ]] && [[ -f cryosparc2_worker.tar.gz ]]; then
+        echo "==================================================="
+        echo "Warning: cryoSPARC v2 dependencies and cryosparc2_worker.tar.gz detected."
+        echo "Performing full v3 worker update in 10 seconds (to cancel, press Ctrl + C)"
+        echo "..."
+        sleep 10
+        finish_install
+        exit 1  # This exit 1 is very important!! It bails out the installation in the parent
+    else
+        ./check_install_deps.sh
+        activate_conda_env
+        finish_deps
+        exit 0
+    fi
+    ;;
+# --------------------------------------------------------------------------------------------
+    forcedeps)
+    if [[ $CRYOSPARC_DEVELOP = "true" ]] ; then
+        echo "Use install_deps.sh only"
+        exit 1
+    fi
+    check_owner
+    export LD_PRELOAD=""
+    export PYTHONPATH=""
+    if [[ $(python --version 2>&1 || echo "noop") == Python\ 2.* ]] && [[ -f cryosparc2_worker.tar.gz ]]; then
+        echo "==================================================="
+        echo "Warning: cryoSPARC v2 dependencies and cryosparc2_worker.tar.gz detected."
+        echo "Performing full v3 worker update in 10 seconds (to cancel, press Ctrl + C)"
+        echo "..."
+        sleep 10
+        finish_install --override
+        exit 1  # This exit 1 is very important!! It bails out the installation in the parent
+    else
+        ./check_install_deps.sh --override
+        activate_conda_env
+        finish_deps
+        exit 0
+    fi
+    ;;
+# --------------------------------------------------------------------------------------------
+    createuser)
+    check_owner
+    shift
+
+    email=""
+    username=""
+    firstname=""
+    lastname=""
+    password=""
+    while [[ $# -gt 0 ]]
+    do
+    key="$1"
+    case $key in
+        --email)
+        email="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --username)
+        username="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --firstname)
+        firstname="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --lastname)
+        lastname="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --password)
+        password="$2"
+        shift
+        shift
+        ;;
+        *)
+        echo "Improper usage."
+        exit 1
+        ;;
+    esac
+    done
+    if [[ -z "$email" ]]; then 
+        echo "--email is required."
+        exit 1
+    fi
+    if [[ -z "$username" ]]; then 
+        echo "--username is required."
+        exit 1
+    fi
+    if [[ -z "$firstname" ]]; then 
+        echo "--firstname is required."
+        exit 1
+    fi
+    if [[ -z "$lastname" ]]; then 
+        echo "--lastname is required."
+        exit 1
+    fi
+
+    email=$(python -c "from email.utils import parseaddr; print(parseaddr(\"$email\")[1].strip())")
+    if [[ ! "$email" == *"@"* ]]; then
+        echo "error: invalid email"
+        exit 1
+    fi 
+    username=$(python -c "print(str(\"$username\").strip())")
+    firstname=$(python -c "print(str(\"$firstname\").strip())")
+    lastname=$(python -c "print(str(\"$lastname\").strip())")
+
+    if [[ -z "$password" ]]; then
+        read -s -p "Input user password: " password
+        echo ""
+    fi
+
+    echo "Creating user $username with email: $email and name: $firstname $lastname"
+    cryosparcm cli "create_user('initial', \"$email\",\"$password\", \"$username\", \"$firstname\", \"$lastname\")"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    resetpassword)
+    check_owner
+    shift
+
+    email=""
+    password=""
+    while [[ $# -gt 0 ]]
+    do
+    key="$1"
+    case $key in
+        --email)
+        email="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --password)
+        password="$2"
+        shift
+        shift
+        ;;
+        *)
+        echo "Improper usage."
+        exit 1
+        ;;
+    esac
+    done
+    if [[ -z "$email" ]]; then 
+        echo "--email is required."
+        exit 1
+    fi
+
+    email=$(python -c "from email.utils import parseaddr; print(parseaddr(\"$email\")[1].strip())")
+    
+    if [[ -z "$password" ]]; then
+        read -s -p "Input user password: " password
+        echo ""
+    fi
+
+    echo "Resetting password for email: $email"
+    cryosparcm cli "reset_password('$email','$password')"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    updateuser)
+    check_owner
+    shift
+
+    email=""
+    password=""
+    username=""
+    firstname=""
+    lastname=""
+    admin=""
+    while [[ $# -gt 0 ]]
+    do
+    key="$1"
+    case $key in
+        --email)
+        email="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --username)
+        username="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --firstname)
+        firstname="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --lastname)
+        lastname="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --admin)
+        admin="$2"
+        shift # past arg
+        shift # past val
+        ;;
+        --password)
+        password="$2"
+        shift
+        shift
+        ;;
+        *)
+        echo "Improper usage."
+        exit 1
+        ;;
+    esac
+    done
+    if [[ -z "$email" ]]; then 
+        echo "--email is required."
+        exit 1
+    fi
+    if [[ "$admin" != "true" && "$admin" != "false" && "$admin" != "" ]]; then
+        echo "--admin must be true or false"
+        exit 1
+    fi
+
+    email=$(python -c "from email.utils import parseaddr; print(parseaddr(\"$email\")[1].strip())")
+    if [[ ! -z "$username" ]]; then
+        username=$(python -c "print(str(\"$username\").strip())")
+    fi
+    if [[ ! -z "$firstname" ]]; then
+        firstname=$(python -c "print(str(\"$firstname\").strip())")
+    fi
+    if [[ ! -z "$lastname" ]]; then
+        lastname=$(python -c "print(str(\"$lastname\").strip())")
+    fi
+
+    if [[ -z "$password" ]]; then
+        read -s -p "Input user password: " password
+        echo ""
+    fi
+
+    echo "Updating user email: $email"
+    cryosparcm cli "update_user('$email', '$password', '$username', '$firstname', '$lastname', '$admin')"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    listusers)
+    shift
+
+    cryosparcm cli "list_users()"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    fg)
+    shift
+    check_owner
+    check_hostname
+    activate_database_env
+    exec supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf fg $1
+    ;;
+# --------------------------------------------------------------------------------------------
+    start)
+    shift
+    NO_WEBAPP="false"
+    remoteuserhost="cryoem5"
+    startup="true"
+    START_SPECIFIC_SERVICE=""
+    CALLED_FROM_SYSTEMD="false"
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case $1 in
+            -sd|--systemd) CALLED_FROM_SYSTEMD="true";;
+            -nw|--nowebapp) NO_WEBAPP="true" ;;
+            -ns|--nostartup) startup="false" ;;
+            database|command_core|command_vis|command_rtp|app_api_dev|app_api|app) START_SPECIFIC_SERVICE="$1" ;;
+            *)
+                echo "Unknown start option $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    check_owner
+    check_hostname
+    activate_database_env
+
+    if [[ -n "$START_SPECIFIC_SERVICE" ]]; then
+        exit_code=0
+        status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || exit_code=$?
+        if [[ "$status_res" == *"no such file"* ]] ; then
+            # CryoSPARC is not already running, so start supervisor
+            supervisord -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf
+        fi
+        echo "Starting cryoSPARC $START_SPECIFIC_SERVICE"
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start "$START_SPECIFIC_SERVICE"
+        exit 0
+    fi
+
+    echo "Starting cryoSPARC System master process.."
+    cd "$CRYOSPARC_ROOT_DIR"
+    mkdir -p run
+    mkdir -p $CRYOSPARC_DB_PATH
+
+    # check for disk space
+    disk_has_space="true"
+    if [[ "$disk_has_space" = "false" ]] ; then
+        echo "Error!! The disk where the cryoSPARC database is installed has less than 5GB of free space. "
+        echo "Clear space before starting cryoSPARC. "
+        exit 1
+    fi
+
+    # Start the supervisor, unless systemd already did.
+    if [[ "$CALLED_FROM_SYSTEMD" == "false" ]]; then
+        exit_code=0
+        status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || exit_code=$?
+        if [[ "$status_res" == *"no such file"* ]] ; then
+            echo "CryoSPARC is not already running."
+        else
+            echo "CryoSPARC is already running."
+            echo "If you would like to restart, use cryosparcm restart"
+            exit 0
+        fi
+
+        # start supervisor
+        supervisord -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf
+        if [[ "$CRYOSPARC_DEVELOP" == "true" ]] ; then
+            chmod 777 $CRYOSPARC_SUPERVISOR_SOCK_FILE
+        fi
+    fi
+
+    # start mongo
+    cryosparcm configuredb
+    supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start database
+    cryosparcm checkdb
+
+    # start command core
+    supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start command_core
+    # python -c "import requests; requests.get('http://$CRYOSPARC_MASTER_HOSTNAME:$CRYOSPARC_COMMAND_CORE_PORT', timeout=15)"
+    # wait until command is responding:
+    while ! python -m bin.minicurl http://$CRYOSPARC_MASTER_HOSTNAME:$CRYOSPARC_COMMAND_CORE_PORT --auth; do
+        sleep 1
+    done
+    echo "    command_core connection succeeded"
+    if [[ "$startup" == "true" ]] ; then
+        # call command core's startup sequence (blocking)
+        python -m bin.minicurl http://$CRYOSPARC_MASTER_HOSTNAME:$CRYOSPARC_COMMAND_CORE_PORT/startup --timeout 120 --auth
+        echo "    command_core startup successful"
+    fi
+    # startup other parts of command
+    supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start command_vis
+    supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start command_rtp
+    # wait until rtp is responding:
+    while ! python -m bin.minicurl http://$CRYOSPARC_MASTER_HOSTNAME:$CRYOSPARC_COMMAND_RTP_PORT --auth; do
+        sleep 1
+    done
+    echo "    command_rtp connection succeeded"
+    if [[ "$startup" == "true" ]] ; then
+        # call command rtp's startup sequence (blocking)
+        python -m bin.minicurl http://$CRYOSPARC_MASTER_HOSTNAME:$CRYOSPARC_COMMAND_RTP_PORT/startup --timeout 120 --auth
+        echo "    command_rtp startup successful"
+    fi
+
+
+    if [[ "$NO_WEBAPP" = "false" ]] ; then
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start app
+        if [[ $CRYOSPARC_DEVELOP = "true" ]] ; then
+            supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start app_api_dev
+        else
+            supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start app_api
+        fi
+    fi
+
+    echo "-----------------------------------------------------"
+    echo ""
+    echo "CryoSPARC master started. "
+    echo " From this machine, access CryoSPARC and CryoSPARC Live at"
+    echo "    http://localhost:$CRYOSPARC_HTTP_APP_PORT"
+    echo ""
+    echo " From other machines on the network, access CryoSPARC and CryoSPARC Live at"
+    echo "    http://$master_hostname_trim:$CRYOSPARC_HTTP_APP_PORT"
+    echo ""
+    echo ""
+    echo "Startup can take several minutes. Point your browser to the address"
+    echo "and refresh until you see the cryoSPARC web interface."
+
+
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    stop)
+    shift
+    STOP_SPECIFIC_SERVICE=""
+
+    # Parse arguments
+	while [ $# -gt 0 ]; do
+		case $1 in
+            database|command_core|command_vis|command_rtp|app_api_dev|app_api|app)
+                STOP_SPECIFIC_SERVICE="$1"
+                ;;
+            *)
+                echo "Unknown cryoSPARC service $1"
+                exit 1
+                ;;
+        esac
+		shift
+	done
+
+    check_owner
+    check_hostname
+
+    ensure_cryosparc_running "If you would like to restart, use cryosparcm restart" "true"
+
+    echo "Stopping cryoSPARC $STOP_SPECIFIC_SERVICE"
+
+    if [[ -n "$STOP_SPECIFIC_SERVICE" ]]; then
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf stop "$STOP_SPECIFIC_SERVICE"
+        exit 0
+    fi
+
+    supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf stop all
+    supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf shutdown
+    exit 0
+
+    ;;
+# --------------------------------------------------------------------------------------------
+    restart)
+    shift
+    cryosparcm stop $@
+    cryosparcm start $@
+    exit 0
+    ;;
+
+# --------------------------------------------------------------------------------------------
+    backup)
+    backup_dir="$CRYOSPARC_DB_PATH/backup"
+    backup_filename="cryosparc_backup_$(date +%Y_%m_%d_%Hh%M).archive"
+
+    for i in "$@"
+    do
+        case $i in 
+            --dir=*)
+                backup_dir="${i#*=}"
+                shift # past argument=value
+                ;;
+            --file=*)
+                backup_filename="${i#*=}"
+                shift # past argument=value
+                ;;
+        esac
+    done
+
+    check_owner
+    check_hostname
+
+    dump_path=$backup_dir/$backup_filename
+    echo ""
+    echo "Backing up to $dump_path"
+    echo ""
+
+    ensure_cryosparc_running "" "false"
+
+    echo "Starting the database in case it's not already running."
+    cryosparcm start database
+    cryosparcm checkdb
+    
+    echo ""
+    echo "Executing mongodump."
+    echo ""
+
+    # insert backup started instance activity
+    mongo_uri=$(python -c "from cryosparc_compute import database_management; print(database_management.get_mongo_uri('meteor'))")
+
+    start_time=$(python -c "import time; print(time.time())")
+    start_doc="{'type' : 'backup', 'activity' : 'backup_start', 'location' : \"$dump_path\", 'timestamp' : $start_time}"
+    mongo --eval "db.instance_activity.insertOne($start_doc)" $mongo_uri
+
+    # dump
+    mkdir -p $backup_dir
+    mongodump --archive="$dump_path" --uri $mongo_uri || exit_code=$?
+
+    end_time=$(python -c "import time; print(time.time())")
+    time_elapsed=$(python -c "print($end_time - $start_time)")
+    if [ ! -z $exit_code ]; then
+        # insert backup failed instance activity
+        err_doc="{'type' : 'backup', 'activity' : 'backup_fail', 'location' : \"$dump_path\", 'time_elapsed' : $time_elapsed, 'timestamp' : $end_time}"
+        mongo --eval "db.instance_activity.insertOne($err_doc)" $mongo_uri > /dev/null
+        echo ""
+        echo "Backup failed!"
+        echo ""
+        exit 1
+    else
+        # insert backup success instance activity
+        size_bytes=$(du -bs $dump_path | head -n1 | awk '{print $1;}')
+        end_doc="{'type' : 'backup', 'activity' : 'backup_complete', 'location' : \"$dump_path\", 'size_bytes' : $size_bytes, 'time_elapsed' : $time_elapsed, 'timestamp' : $end_time}"
+        mongo --eval "db.instance_activity.insertOne($end_doc)" $mongo_uri > /dev/null
+        echo ""
+        echo "Backup complete!"
+        echo ""
+        exit 0
+    fi
+    ;;
+
+# --------------------------------------------------------------------------------------------
+
+    restore)
+    restore_path=""
+
+    for i in "$@"
+    do
+        case $i in
+            --file=*)
+                restore_path="${i#*=}"
+                shift # past argument=value
+                ;;
+        esac
+    done
+
+    check_owner
+    check_hostname
+
+    if [[ -e "$restore_path" ]] ; then 
+        echo ""
+        echo "Restoring from $restore_path"
+        echo ""
+    else
+        echo "Restore file not specified or does not exist!"
+        exit 1
+    fi
+
+    ensure_cryosparc_not_running "Stop CryoSPARC before running cryosparcm restore." "true"
+
+    if [[ -d "$CRYOSPARC_DB_PATH" ]] ; then
+        # directory exists
+        if [ "$(ls -A $CRYOSPARC_DB_PATH)" ]; then
+            echo "Unable to restore database: database directory ${CRYOSPARC_DB_PATH} is not empty."
+            exit 1
+        fi
+    else
+        if [[ -f "$CRYOSPARC_DB_PATH" ]] ; then
+            echo "Unable to restore database: database directory ${CRYOSPARC_DB_PATH} exists but is not a directory."
+            exit 1
+        fi
+        echo "Database directory ${CRYOSPARC_DB_PATH} does not exist, creating directory..."
+        mkdir -p "$CRYOSPARC_DB_PATH"
+        echo "Done."
+    fi
+
+    echo "Configuring MongoDB..."
+    cryosparcm configuredb
+
+    echo "Starting MongoDB..."
+    cryosparcm start database
+    cryosparcm checkdb
+    
+    echo ""
+    echo "Executing mongorestore."
+    echo ""
+
+    mongo_uri=$(python -c "from cryosparc_compute import database_management; print(database_management.get_mongo_uri('meteor'))")
+    mongorestore --archive="$restore_path" --uri $mongo_uri
+    
+    echo ""
+    echo "mongorestore complete!"
+
+    echo "Shutting down database"
+    cryosparcm stop
+
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    compact)
+
+    check_owner
+    check_hostname
+
+    ensure_cryosparc_running "Start CryoSPARC before running cryosparcm compact." "true"
+
+    echo "Compacting MongoDB..."
+    python -c "from cryosparc_compute import database_management; database_management.compact()"
+    echo ""
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    status)
+
+    check_owner
+    check_hostname
+
+    echo "----------------------------------------------------------------------------"
+    echo "CryoSPARC System master node installed at"
+    echo "$CRYOSPARC_ROOT_DIR"
+    cd "$CRYOSPARC_ROOT_DIR"
+    if [[ -e version ]] ; then
+        if [[ -e patch ]] ; then
+            echo "Current cryoSPARC version: $(<version)+$(<patch)"
+        else
+            echo "Current cryoSPARC version: $(<version)"
+        fi
+    else
+        echo "Developer installation."
+    fi
+    echo "----------------------------------------------------------------------------"
+    echo ""
+
+    exit_code=0
+    status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || exit_code=$?
+    if [[ $status_res == *"no such file"* ]] ; then
+        echo "CryoSPARC is not running."
+        echo ""
+    else
+        echo "CryoSPARC process status:"
+        echo ""
+        echo "$status_res"
+        echo ""
+        echo "----------------------------------------------------------------------------"
+        cryosparcm licensestatus
+    fi
+    echo "----------------------------------------------------------------------------"
+    echo ""
+    echo "global config variables:"
+    cat config.sh | grep -E "^\s*export "
+    echo ""
+
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    licensestatus)
+    license_validation_status=$(python -m cryosparc_compute.client "$CRYOSPARC_MASTER_HOSTNAME" "$CRYOSPARC_COMMAND_CORE_PORT" "validate_license()" 2> /dev/null || echo "An error ocurred while checking license status")
+    if [ "$license_validation_status" == "True" ]; then
+        echo "License is valid"
+        exit 0
+    elif [ "$license_validation_status" == "False" ]; then
+        python -m cryosparc_compute.client "$CRYOSPARC_MASTER_HOSTNAME" "$CRYOSPARC_COMMAND_CORE_PORT" "dump_license_validation_results()"
+        exit 0
+    else
+        echo "$license_validation_status"
+        echo "Could not get license verification status. Are all CryoSPARC processes RUNNING?"
+        exit 1
+    fi
+    ;;
+# --------------------------------------------------------------------------------------------
+    jobstatus)
+
+    echo "----------------------------------------------------------------------------"
+    echo "CryoSPARC System master node installed at"
+    echo "$CRYOSPARC_ROOT_DIR"
+    cd "$CRYOSPARC_ROOT_DIR"
+    if [[ -e version ]] ; then
+        echo "Current cryoSPARC version: $(<version)"
+    else
+        echo "Developer installation."
+    fi
+    echo "----------------------------------------------------------------------------"
+    echo ""
+
+    status_res=$(supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf status) || exit_code=$?
+    if [[ "$status_res" == *"no such file"* ]] ; then
+        echo "cryosparcm is not running."
+        echo ""
+    else
+        echo "cryosparcm job status:"
+        echo ""
+        echo "Jobs running:"
+        cryosparcm cli "get_jobs_by_status('running', True)"
+        echo "Jobs queued:"
+        cryosparcm cli "get_jobs_by_status('queued', True)"
+        echo ""
+    fi
+    echo "----------------------------------------------------------------------------"
+    echo ""
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    watchdog)
+    cd "$CRYOSPARC_ROOT_DIR"
+    check_owner
+    check_hostname
+    activate_database_env
+    if [[ "$2" = "--restart_command_core" ]] ; then
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf stop command_vis
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf stop command_core
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start command_core
+        supervisorctl -c "$CRYOSPARC_ROOT_DIR"/supervisord.conf start command_vis
+    else
+        python bin/watch_restart_command.py cryosparc_command py,md,sh "cryosparcm watchdog --restart_command_core"
+    fi
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    update)
+
+    export LD_PRELOAD=""
+
+    update_usage() {
+        echo "
+Usage:
+
+    cryosparcm update [--version=] [--check] [--list] [--override] [--download-only] [--skip-download]
+
+    Update to the latest version of CryoSPARC.
+    Options:
+        --version                   Specify the version of CryoSPARC to update to (e.g., --version=v4.0.0).
+        --check                     Check if there are any updates available for CryoSPARC.
+        --list                      List all available versions CryoSPARC can update to.
+        --override                  Update to the latest version of CryoSPARC, regardless of the version the instance is currently on.
+        --download-only             Download the master and worker update packages without updating.
+        --skip-download             Update CryoSPARC with previously-downloaded master and worker packages.
+        "
+    }
+
+    shift
+
+    # don't allow this to be killed if parent dies
+    # for example if this is run by the app itself
+    trap '' SIGHUP
+
+    list_updates=false
+    version="latest"
+    check_for_update=false
+    OVERRIDE=false
+    install_args=()
+    download_only=false
+    skip_download=false
+
+    for i in "$@"
+    do
+        case $i in
+            --version=*)
+            version="${i#*=}"
+            if [[ "$version" != v* ]] ; then
+                >&2 echo "Invalid version specification: '$version'"
+                update_usage
+                exit 1
+            fi
+            shift # past argument=value
+            ;;
+            --list)
+            list_updates=true
+            shift # past argument=value
+            ;;
+            --check)
+            check_for_update=true
+            shift # past argument=value
+            ;;
+            --override)
+            OVERRIDE=true
+            check_for_update=false
+            list_updates=false
+            install_args+=("--override")
+            if [[ ! "$version" == "latest" ]]; then
+                >&2 echo "Cannot specify a version when forcing an update- only the latest version of CryoSPARC will be used."
+                update_usage
+                exit 1
+            fi
+            shift # past argument=value
+            ;;
+            --download-only)
+            if [[ "$skip_download" == "true" ]]; then
+                >&2 echo "Cannot specify --skip-download and --download-only together."
+                update_usage
+                exit 1
+            fi
+            download_only=true
+            shift
+            ;;
+            --skip-download)
+            if [[ "$download_only" == "true" ]]; then
+                >&2 echo "Cannot specify --download-only and --skip-download together."
+                update_usage
+                exit 1
+            fi
+            skip_download=true
+            shift
+            ;;
+            -h|--help|h|help)
+            update_usage
+            exit
+            ;;
+            *|-*|--*)
+            >&2 echo "Invalid argument: $1"
+            update_usage
+            exit 1
+            ;;
+        esac
+    done
+
+    check_owner
+    check_hostname
+
+    if [ "$CRYOSPARC_DEVELOP" = true ] ; then
+        >&2 echo "This is a developer installation - please use git directly."
+        exit 1
+    fi
+
+    current_version=$(<version)
+
+    echo "CryoSPARC current version $current_version"
+    echo "          update starting on $(date)"
+    echo ""
+
+    if [ "$check_for_update" = true ] ; then
+        version=$(curl $curl_opts --silent "https://get.cryosparc.com/versions/latest/$CRYOSPARC_LICENSE_ID")
+        if [[ "$version" != v* ]] ; then
+            >&2 echo "Error getting version numbers: $version"
+            exit 1
+        fi
+        echo "  current version $current_version"
+        echo "      new version $version"
+        echo ""
+        if [[ "$current_version" = "$version" ]]; then
+            echo "Already up to date."
+            exit 0
+        else
+            echo "Update available!"
+            exit 0
+        fi
+
+    fi
+
+    if [ "$list_updates" = true ] ; then
+        echo "Available versions:"
+        echo ""
+        curl $curl_opts --silent "https://get.cryosparc.com/versions/list/$CRYOSPARC_LICENSE_ID"
+        echo ""
+        echo ""
+        echo "To install a specific version, use "
+        echo "    $ cryosparcm update --version=vXX.YY.ZZ[-branchname]"
+        echo ""
+        exit 0
+    fi
+
+    if [[ "$version" == "latest" ]] ; then
+        echo "No version specified - updating to latest version."
+        echo ""
+        version=$(curl $curl_opts --silent "https://get.cryosparc.com/versions/latest/$CRYOSPARC_LICENSE_ID")
+        if [[ "$version" != v* ]] ; then
+            >&2 echo "Error getting version numbers: $version"
+            exit 1
+        fi
+    fi
+
+    if [[ $OVERRIDE == "false" ]]; then
+        if [[ "$current_version" = "$version" ]]; then
+            echo "Already up to date: current version $current_version new version $version"
+            exit 0
+        else
+            echo "============================="
+            echo "Updating to version $version."
+            echo "============================="
+        fi
+    else
+        echo "============================="
+        echo "Forcing update to version $version...."
+        echo "============================="
+    fi
+
+    # Mirror all standard output into update.log
+    update_log_path="${CRYOSPARC_ROOT_DIR}/run/update.log"
+    echo "" >> "${update_log_path}"
+    echo "Update at $(date +"%Y-%m-%dT%H:%M:%S%:z")" >> "${update_log_path}"
+    exec &> >(tee -a "${update_log_path}")
+
+    if [[ "$skip_download" == "false" ]]; then
+        # remove previous downloads
+        echo "  Removing previous downloads..."
+        rm -f cryosparc_master.tar.gz cryosparc_worker.tar.gz cryosparc2_master.tar.gz cryosparc2_worker.tar.gz
+
+        # fetch the new version tar.gz inside root dir
+        echo "  Downloading master update..."
+        curl $curl_opts -L "https://get.cryosparc.com/download/master-$version/$CRYOSPARC_LICENSE_ID" > cryosparc_master.tar.gz
+        echo "  Downloading worker update..."
+        curl $curl_opts -L "https://get.cryosparc.com/download/worker-$version/$CRYOSPARC_LICENSE_ID" > cryosparc_worker.tar.gz
+        echo "  Done."
+    else
+        echo " Skipping download of CryoSPARC $version update packages"
+        if [[ ! -f cryosparc_master.tar.gz ]] ; then
+            >&2 echo " The file '${CRYOSPARC_ROOT_DIR}/cryosparc_master.tar.gz' is missing, but is required to update."
+            exit 1
+        fi
+        if [[ ! -f cryosparc_worker.tar.gz ]] ; then
+            >&2 echo " The file '${CRYOSPARC_ROOT_DIR}/cryosparc_worker.tar.gz' is missing, but is required to update."
+            exit 1
+        fi
+
+        echo " Checking versions of cryosparc_master.tar.gz and cryosparc_worker.tar.gz update packages..."
+        new_master_version=$(tar -xf cryosparc_master.tar.gz --to-stdout cryosparc_master/version)
+        new_worker_version=$(tar -xf cryosparc_worker.tar.gz --to-stdout cryosparc_worker/version || tar -xf cryosparc_worker.tar.gz --to-stdout cryosparc2_worker/version)
+
+        if [[ "$new_master_version" != "$new_worker_version" ]] ; then
+            >&2 echo " Version of update package '${CRYOSPARC_ROOT_DIR}/cryosparc_master.tar.gz' ($new_master_version) does not match version of update package '${CRYOSPARC_ROOT_DIR}/cryosparc_worker.tar.gz' ($new_worker_version)"
+            exit 1
+        fi
+
+        if [[ "$version" != "$new_master_version" ]]; then
+            >&2 echo " Version of update package ($new_master_version) does not match the version of CryoSPARC specified to update to ($version)."
+            exit 1
+        fi
+    fi
+
+    if [[ "$download_only" == "true" ]]; then
+        exit 0
+    fi
+
+    echo ""
+    echo " Update will now be applied to the master installation, "
+    echo " followed by worker installations on other nodes."
+    echo ""
+
+    # stop processes and shutdown
+    cd "$CRYOSPARC_ROOT_DIR"
+    cryosparcm stop
+    
+    {
+        # override check functions, as we don't want the update function
+        # to fail if the hostname check is inaccurate
+        CRYOSPARC_FORCE_USER="true"
+        CRYOSPARC_FORCE_HOSTNAME="true"
+        echo "  Deleting old files..."
+
+        # wipe out everything that could be updated except deps because of the hash
+        rm -rf cryosparc_app cryosparc_command cryosparc_compute cryosparc_tools cryosparc_liveapp cryosparc_webapp deps_bundle patch
+        echo "  Extracting..."
+        tar -xz --overwrite -f cryosparc_master.tar.gz --strip-components=1 --directory ./ # because tar contains cryosparc_master as top-level-dir
+        echo "  Done."
+
+        version=$(<version)
+        if [[ "$version" == v2.* ]]; then
+            echo "  Downgrading to ${version}..."
+            # Not called as a new process here becase "cryosparcm install" is not
+            # available in cryoSPARC versions before 3.0
+            finish_install ${install_args[@]}
+            exit 0
+        else
+            exec cryosparcm install ${install_args[@]}
+        fi
+    }; exit
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    devupdate)
+    {
+        cryosparcm stop
+        cd ../ # package
+        git pull
+        cd cryosparc_master
+        ./check_install_deps.sh # just check and update if necessary
+        cd cryosparc_app/api
+        meteor npm install
+        cd ../custom-server
+        npm install
+        cd "$CRYOSPARC_ROOT_DIR"
+        cd ../cryosparc_worker
+        ./check_install_deps.sh # just check and update if necessary
+        cryosparcm start
+    }; exit
+    ;;
+# --------------------------------------------------------------------------------------------
+    install)
+        shift
+        check_owner
+        finish_install $@
+    ;;
+# --------------------------------------------------------------------------------------------
+    run)
+    # run a job on master direct.
+    shift # past 'run'
+    cd "$CRYOSPARC_ROOT_DIR"
+    exec python -c "import cryosparc_compute.run as run; run.run()" "$@"
+    ;;
+# --------------------------------------------------------------------------------------------
+    call)
+    # do something in the cryosparcm environment, from current directory
+    shift # past 'call'
+    cd "$initial_dir"
+    cmd="$1"
+    shift # past command
+    exec $cmd "$@"
+    ;;
+# --------------------------------------------------------------------------------------------
+    cluster)
+    shift # past 'cluster'
+    cd "$initial_dir" # starting dir
+    case "$1" in
+        help)
+        shift
+        ;;
+        example)
+        shift
+        echo "Writing example cluster_info.json and cluster_script.sh to current dir"
+        case "$1" in
+            pbs)
+            shift
+
+cat > cluster_info.json <<"END"
+{
+    "name" : "pbscluster",
+    "worker_bin_path" : "/path/to/cryosparc_worker/bin/cryosparcw",
+    "cache_path" : "/path/to/local/SSD/on/cluster/nodes",
+    "send_cmd_tpl" : "ssh loginnode {{ command }}",
+    "qsub_cmd_tpl" : "qsub {{ script_path_abs }}",
+    "qstat_cmd_tpl" : "qstat -as {{ cluster_job_id }}",
+    "qdel_cmd_tpl" : "qdel {{ cluster_job_id }}",
+    "qinfo_cmd_tpl" : "qstat -q"
+}
+END
+
+cat > cluster_script.sh <<"END"
+#!/usr/bin/env bash
+#### cryoSPARC cluster submission script template for PBS
+## Available variables:
+## {{ run_cmd }}            - the complete command string to run the job
+## {{ num_cpu }}            - the number of CPUs needed
+## {{ num_gpu }}            - the number of GPUs needed. 
+##                            Note: the code will use this many GPUs starting from dev id 0
+##                                  the cluster scheduler or this script have the responsibility
+##                                  of setting CUDA_VISIBLE_DEVICES so that the job code ends up
+##                                  using the correct cluster-allocated GPUs.
+## {{ ram_gb }}             - the amount of RAM needed in GB
+## {{ job_dir_abs }}        - absolute path to the job directory
+## {{ project_dir_abs }}    - absolute path to the project dir
+## {{ job_log_path_abs }}   - absolute path to the log file for the job
+## {{ worker_bin_path }}    - absolute path to the cryosparc worker command
+## {{ run_args }}           - arguments to be passed to cryosparcw run
+## {{ project_uid }}        - uid of the project
+## {{ job_uid }}            - uid of the job
+## {{ job_creator }}        - name of the user that created the job (may contain spaces)
+## {{ cryosparc_username }} - cryosparc username of the user that created the job (usually an email)
+##
+## What follows is a simple PBS script:
+
+#PBS -N cryosparc_{{ project_uid }}_{{ job_uid }}
+#PBS -l select=1:ncpus={{ num_cpu }}:ngpus={{ num_gpu }}:mem={{ (ram_gb*1000)|int }}mb:gputype=P100
+#PBS -o {{ job_log_path_abs }}
+#PBS -e {{ job_log_path_abs }}
+
+available_devs=""
+for devidx in $(seq 1 16);
+do
+    if [[ -z $(nvidia-smi -i $devidx --query-compute-apps=pid --format=csv,noheader) ]] ; then
+        if [[ -z "$available_devs" ]] ; then
+            available_devs=$devidx
+        else
+            available_devs=$available_devs,$devidx
+        fi
+    fi
+done
+export CUDA_VISIBLE_DEVICES=$available_devs
+
+{{ run_cmd }}
+
+END
+            exit 0
+            ;;
+            slurm)
+            shift
+cat > cluster_info.json <<"END"
+{
+    "name" : "slurmcluster",
+    "worker_bin_path" : "/path/to/cryosparc_worker/bin/cryosparcw",
+    "cache_path" : "/path/to/local/SSD/on/cluster/nodes",
+    "send_cmd_tpl" : "ssh loginnode {{ command }}",
+    "qsub_cmd_tpl" : "sbatch {{ script_path_abs }}",
+    "qstat_cmd_tpl" : "squeue -j {{ cluster_job_id }}",
+    "qstat_code_cmd_tpl": "squeue -j {{ cluster_job_id }} --format=%T | sed -n 2p",
+    "qdel_cmd_tpl" : "scancel {{ cluster_job_id }}",
+    "qinfo_cmd_tpl" : "sinfo"
+}
+END
+
+cat > cluster_script.sh <<"END"
+#!/usr/bin/env bash
+#### cryoSPARC cluster submission script template for SLURM
+## Available variables:
+## {{ run_cmd }}            - the complete command string to run the job
+## {{ num_cpu }}            - the number of CPUs needed
+## {{ num_gpu }}            - the number of GPUs needed. 
+##                            Note: the code will use this many GPUs starting from dev id 0
+##                                  the cluster scheduler or this script have the responsibility
+##                                  of setting CUDA_VISIBLE_DEVICES so that the job code ends up
+##                                  using the correct cluster-allocated GPUs.
+## {{ ram_gb }}             - the amount of RAM needed in GB
+## {{ job_dir_abs }}        - absolute path to the job directory
+## {{ project_dir_abs }}    - absolute path to the project dir
+## {{ job_log_path_abs }}   - absolute path to the log file for the job
+## {{ worker_bin_path }}    - absolute path to the cryosparc worker command
+## {{ run_args }}           - arguments to be passed to cryosparcw run
+## {{ project_uid }}        - uid of the project
+## {{ job_uid }}            - uid of the job
+## {{ job_creator }}        - name of the user that created the job (may contain spaces)
+## {{ cryosparc_username }} - cryosparc username of the user that created the job (usually an email)
+##
+## What follows is a simple SLURM script:
+
+#SBATCH --job-name cryosparc_{{ project_uid }}_{{ job_uid }}
+#SBATCH -n {{ num_cpu }}
+#SBATCH --gres=gpu:{{ num_gpu }}
+#SBATCH --partition=gpu
+#SBATCH --mem={{ (ram_gb*1000)|int }}MB
+#SBATCH --output={{ job_log_path_abs }}
+#SBATCH --error={{ job_log_path_abs }}
+
+available_devs=""
+for devidx in $(seq 0 15);
+do
+    if [[ -z $(nvidia-smi -i $devidx --query-compute-apps=pid --format=csv,noheader) ]] ; then
+        if [[ -z "$available_devs" ]] ; then
+            available_devs=$devidx
+        else
+            available_devs=$available_devs,$devidx
+        fi
+    fi
+done
+export CUDA_VISIBLE_DEVICES=$available_devs
+
+{{ run_cmd }}
+
+END
+            exit 0
+            ;;
+            *)
+            echo "Unknown cluster type. Supported templates are:"
+            echo "  pbs"
+            echo "  slurm"
+            echo "  gridengine"
+            echo "Any cluster scheduler is supported, but you may have to write your own custom submission script."
+            exit 0
+        esac
+        ;;
+        dump)
+        shift
+        name="$1"
+        echo $name
+        if [[ -z "$name" ]]; then
+            echo "Must provide name of cluster to dump info"
+            exit 1
+        fi
+        echo "Dumping configuration and script for cluster $name"
+        cryosparcm cli 'get_scheduler_target_cluster_info("'$name'")' > cluster_info.json
+        cryosparcm cli 'get_scheduler_target_cluster_script("'$name'")' > cluster_script.sh
+        echo "Done."
+        ;;
+        connect)
+        shift
+        infojson="$initial_dir"/cluster_info.json
+        scriptfile="$initial_dir"/cluster_script.sh
+        if [[ ! -f $infojson ]]; then 
+            echo "cluster_info.json file does not exist in current directory"
+            exit 1
+        fi
+        if [[ ! -f $scriptfile ]]; then 
+            echo "cluster_script.sh file does not exist in current directory"
+            exit 1
+        fi
+        cd "$CRYOSPARC_ROOT_DIR"
+
+        python -c "from cryosparc_compute.cluster import connect; connect('$infojson', '$scriptfile')"
+        ;;
+        validate)
+        shift
+        name="$1"
+
+        if [[ -z "$name" ]]; then
+            echo "usage: cryosparcm cluster validate <cluster_lane_name> --projects_dir <abs_path_to_projects_dir>"
+            exit 1
+        fi
+
+        shift
+        case $1 in
+            --projects_dir)
+            shift
+            projects_dir="$1"
+        esac
+        if [[ -z "$projects_dir" ]]; then
+            echo "usage: cryosparcm cluster validate <cluster_lane_name> --projects_dir <abs_path_to_projects_dir>"
+            exit 1
+        fi
+
+        echo "Validating cluster configuration for $name"
+        echo "Using projects_dir $projects_dir"
+        python -c "from cryosparc_compute.cluster import validate; validate('$name', '$projects_dir')"
+        ;;
+        remove)
+        shift
+        name="$1"
+        echo $name
+        if [[ -z "$name" ]]; then
+            echo "Must provide name of cluster to remove"
+            exit 1
+        fi
+        echo "Removing cluster $name"
+        cryosparcm cli 'remove_scheduler_target_cluster("'$name'")' 
+        ;;
+    esac
+
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    downloadtest)
+    # download the empiar10025subset test data from s3 
+    shift # past 'call'
+    echo "Downloading test data.."
+    curl $curl_opts https://s3.wasabisys.com/cryosparc-test-data-dist/empiar_10025_subset.tar > "$initial_dir"/empiar_10025_subset.tar
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    patch)
+    shift
+
+    # Patch the worker node
+    check_owner
+    check_hostname
+    CSM_INITIAL_DIR=$initial_dir exec python -m patch $@
+    ;;
+# --------------------------------------------------------------------------------------------
+    supervisord)
+    shift
+    check_owner
+    check_hostname
+    activate_database_env
+    exec supervisord $@
+    ;;
+# --------------------------------------------------------------------------------------------
+    changeport)
+    check_owner
+    check_hostname
+    shift
+    if [[ $1 == "" ]]; then
+        echo "Usage: cryosparcm changeport <port> [--yes|-y]"
+        exit 1
+    fi
+    new_base_port="$1"
+    shift
+    ask_confirmation=true
+    for i in "$@"; do
+        case $i in
+            --yes|-y)
+            ask_confirmation=false
+            shift
+            ;;
+            *)
+            echo "Unrecognized flag ${i}."
+            exit 1
+        esac
+    done
+
+    re='^[0-9]+$'
+    if ! [[ "$new_base_port" =~ $re ]] ; then
+        echo "ERROR: ${new_base_port} is not a valid port" >&2
+        exit 1
+    fi
+    # Ports below 1024 are reserved for other applications
+    # The highest TCP port is 65535, reserve 20 for cryoSPARC processes (65515)
+    if [ $new_base_port -lt 1024 ] || [ $new_base_port -gt 65515 ]; then
+        echo "ERROR: Please select a port between 1024 and 65515 (inclusive)" >&2
+        exit 1
+    fi
+
+    echo "Requested change base cryoSPARC port from ${CRYOSPARC_BASE_PORT} to ${new_base_port}. This will perform the following actions:"
+    echo ""
+    echo "  1. Stop cryoSPARC"
+    echo "  2. Set the CRYOSPARC_BASE_PORT variable in config.sh to the new port"
+    echo "  3. Reconfigure the database to use the new port"
+    echo "  4. Start cryoSPARC"
+    echo ""
+    echo "Please ensure you have a recent database backup before proceeding"
+    if [[ $ask_confirmation == "true" ]]; then
+        echo "Change base port?"
+        select yn in "Yes" "No"; do
+            case $yn in
+                Yes ) echo "Continuing." ; break ;;
+                *) exit 1 ;;
+            esac
+        done
+    fi
+
+    cryosparcm stop
+    sed -i.bak "/CRYOSPARC_BASE_PORT/ s|="[^"][^"]*"|="$new_base_port"|" config.sh
+    echo "Wrote changes to config.sh"
+    cryosparcm start database
+    cryosparcm checkdb > /dev/null 2>&1 || echo "Reconfiguring database." && cryosparcm fixdbport
+    cryosparcm restart
+    cryosparcm checkdb
+    ;;
+# --------------------------------------------------------------------------------------------
+    checkdb)
+    {
+        if ! command python -c "from cryosparc_compute import database_management; database_management.check_mongo()"; then
+            echo "[$(date -Is)] Error checking database. Most recent database log lines:" >&2
+            tail "$CRYOSPARC_ROOT_DIR/run/database.log"
+            exit 1
+        fi
+    }; exit
+    ;;
+# --------------------------------------------------------------------------------------------
+    fixdbport)
+    {
+        db_address="localhost:${CRYOSPARC_MONGO_PORT}"
+        mongo_uri=$(python -c "from cryosparc_compute import database_management; print(database_management.get_mongo_uri('meteor', admin=True))")
+        if ! command mongo "${mongo_uri}" --eval "rs.reconfig({\"_id\":\"meteor\",\"members\":[{\"_id\":0,\"host\":\"${db_address}\"}]},{\"force\":true})"; then
+            echo "[$(date -Is)] Error fixing database port. Most recent database log lines:" >&2
+            tail "$CRYOSPARC_ROOT_DIR/run/database.log"
+            exit 1
+        fi
+    }; exit
+    ;;
+# --------------------------------------------------------------------------------------------
+    configuredb)
+    {
+        if ! command python -c "from cryosparc_compute import database_management; database_management.configure_mongo(logfile='${CRYOSPARC_ROOT_DIR}/run/database.log')"; then
+            echo "[$(date -Is)] Error configuring database. Most recent database log lines:" >&2
+            tail "$CRYOSPARC_ROOT_DIR/run/database.log"
+            exit 1
+        fi
+    }; exit
+    ;;
+# --------------------------------------------------------------------------------------------
+    maintenancemode)
+    check_owner
+    shift
+    case $1 in
+        status)
+            value=$(cryosparcm cli "get_config_var(name='maintenance_mode', fail_notset=False, default=False)")
+            if [[ "${value}" = "True" ]]; then status="ON"; else status="OFF"; fi
+            echo "Maintenance mode is currently ${status}"
+            ;;    
+        on)
+            echo "Turning maintenance mode ON"
+            cryosparcm cli "set_maintenance_mode(True)" >/dev/null
+            ;;
+        off)
+            echo "Turning maintenance mode OFF"
+            cryosparcm cli "set_maintenance_mode(False)" >/dev/null
+            ;;
+        *)
+            echo "Usage: cryosparcm maintenancemode [status|on|off]
+
+    cryosparcm maintenancemode status
+        display if maintenancemode is ON or OFF
+
+    cryosparcm maintenancemode on
+        turn on maintenance mode
+
+    cryosparcm maintenancemode off
+        turn off maintenance mode
+            "
+            ;;
+    esac
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    errorreport)
+    errorreport_usage() {
+        echo "  Usage:
+    cryosparcm errorreport [-o|--output_folder output_folder] [--days|-d N] [--date|-D YYYY-MM-DD] [--max_lines|-m MAX_LINES] [--level|-l LEVEL]
+        Create a cryoSPARC error report including diagnostic information and system logs
+        Options:
+            --output_folder=<path>      path to output directory
+                                            (cryosparc master root directory by default)
+            --days=<number>             number of days of logs to include
+                                            (7 days by default, ignored if --date is used)
+            --date=<YYY-MM-DD>          logs appearing during and after the input date
+                                        will be included
+            --max_lines=<number>        maximum number of log lines to include for each log file
+            --level=<level>             filter logs that are at the input level
+            --offline                   compile error report without database connection or connecting to workers
+            --skip_workers              skip collection of worker instance information
+        "
+    }
+
+    log_service=""
+    days=7
+    max_lines="None"
+    offline="False"
+    skip_workers="False"
+    shift
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+            # Show only logs with the given level
+            errorreport_usage
+            exit
+            ;;
+
+            -o|--output_folder)
+            # output to path
+            shift
+            output_folder=$1
+            if [[ ! -d "$output_folder" ]]; then
+                echo "Error: output_folder is not a directory"
+                exit 1
+            fi
+            ;;
+
+            -d|--days)
+            # Show last x days worth of logs
+            shift
+            num_re='^[0-9]+$'
+            if ! [[ $1 =~ $num_re ]] ; then
+                echo "Invalid number of days: $1" >&2
+                errorreport_usage
+                exit 1
+            fi
+            days=$1
+            ;;
+
+            -D|--date)
+            # Show only logs from the given date
+            shift
+            date_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            if ! [[ $1 =~ $date_re ]]; then
+                echo "Invalid date format: $1" >&2
+                errorreport_usage
+                exit 1
+            fi
+            requested_date=$1
+            ;;
+
+            -m|--max_lines)
+            # Max number of lines to return
+            shift
+            max_lines=$1
+            re='^[0-9]+$'
+            if ! [[ $max_lines =~ $re ]] ; then
+            echo "error: max lines is not a number" >&2; exit 1
+            fi
+            ;;
+
+            -l|--level)
+            # Show only logs with the given log level
+            shift
+            level=$1
+            ;;
+            --offline)
+            offline="True"
+            ;;
+            --skip_workers)
+            skip_workers="True"
+            ;;
+            *|-*|--*)
+            echo "Invalid argument: $1" >&2
+            errorreport_usage
+            exit 1
+            ;;
+        esac
+        shift
+    done
+    # generate error report
+    if [[ -z "$requested_date" ]]; then
+        python -u -c "from cryosparc_compute.error_reporting import generate_error_report; print(generate_error_report(days=$days, max_lines=$max_lines, level=\"$level\", output_folder=\"$output_folder\", offline=$offline, skip_workers=$skip_workers))"
+    else
+        python -u -c "from cryosparc_compute.error_reporting import generate_error_report; print(generate_error_report(date=$\"$date\", max_lines=$max_lines, level=\"$level\", output_folder=\"$output_folder\", offline=$offline, skip_workers=$skip_workers))"
+    fi
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    test)
+    test_usage() {
+        echo "  Usage:
+    cryosparcm test install|i
+    cryosparcm test workers|w <project_uid> [--test launch|ssd|gpu] [-t|--target <target1>] [-t|--target <target2>] [--test-tensorflow]
+
+    Test a cryoSPARC installation
+    Options:
+        install                     test all installation components (services, users, licensing, workers)
+        workers <project_uid>       test each worker provided a valid project_uid
+            --test                  Specify either the launch, ssd or gpu test
+            -t|--target             Specify a target to run the test on. Provide this option for each target
+            --test-tensorflow       Test if worker(s) can launch Tensorflow jobs on all enabled GPUs
+            --test-pytorch          Test if worker(s) can launch PyTorch jobs on all enabled GPUs
+        "
+    }
+    worker_test_args=()
+    targets=()
+    shift # move to next argument
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help|h|help)
+            test_usage
+            exit
+            ;;
+            i|install)
+            mode='install'
+            ;;
+            w|workers)
+            mode='worker'
+            shift
+            if [ -z "$1" ]; then
+                echo "Must specify a project for worker tests."
+                test_usage
+                exit 1
+            else
+                project_uid=$1
+                echo "Using project $project_uid"
+            fi
+            ;;
+            -t|--target)
+            shift
+            if [ -z "$1" ]; then
+                echo "Missing a target hostname."
+                test_usage
+                exit 1
+            else
+                targets+=( "$1" )
+            fi
+            ;;
+            --test)
+            shift
+            if [ -z "$1" ]; then
+                echo "Must specify either 'launch', 'ssd' or 'gpu' test."
+                test_usage
+                exit 1
+            elif [ ! -z "$test" ]; then
+                echo "Can only specify one test type."
+                test_usage
+                exit 1
+            elif [ ! -z "$test_tensorflow" ]; then
+                if [ "$1" != "gpu" ]; then
+                    echo "Can only specify the GPU test since --test-tensorflow is specified."
+                    test_usage
+                    exit 1
+                fi
+            elif [ ! -z "$test_pytorch" ]; then
+                if [ "$1" != "gpu" ]; then
+                    echo "Can only specify the GPU test since --test-pytorch is specified."
+                    test_usage
+                    exit 1
+                fi
+            else
+                test=$1
+                echo "Specifying $test test"
+                worker_test_args+=("--$test ")
+            fi
+            ;;
+            --test-tensorflow)
+            if [ ! -z "$test" ] && [ "$test" != "gpu" ]; then
+                echo "Can only specify --test-tensorflow if GPU test is selected."
+                test_usage
+                exit 1
+            else
+                test_tensorflow=true
+                echo "Enabling Tensorflow test"
+                worker_test_args+=("--test-tensorflow ")
+            fi
+            ;;
+            --test-pytorch)
+            if [ ! -z "$test" ] && [ "$test" != "gpu" ]; then
+                echo "Can only specify --test-pytorch if GPU test is selected."
+                test_usage
+                exit 1
+            else
+                test_pytorch=true
+                echo "Enabling PyTorch test"
+                worker_test_args+=("--test-pytorch ")
+            fi
+            ;;
+            *|-*|--*)
+            echo "Invalid argument: $1" >&2
+            test_usage
+            exit 1
+            ;;
+        esac
+        shift
+    done
+    if [ "$mode" = "install" ] ; then
+        echo "Running installation tests..."
+        installation_test
+    elif [ "$mode" = "worker" ] ; then
+        if (( ${#targets[@]} > 0)); then 
+            echo "Testing targets ${targets[@]}"
+            worker_test_args+=("-t ${targets[@]}")
+        fi
+        echo "Running worker tests..."
+        python -m cryosparc_command.instance_tests.worker_test -p $project_uid ${worker_test_args[@]}
+    else
+        echo "Test mode not specified."
+        test_usage
+        exit 1
+    fi
+    ;;
+
+# --------------------------------------------------------------------------------------------
+    *)
+    echo "Unknown cryoSPARC command $1"
+    exit 0
+    ;;
+
+esac

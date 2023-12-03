@@ -33,9 +33,8 @@ RUN fakeroot addgroup --gid 1000 cryo &&  fakeroot adduser --gid 1000 --uid 1000
 # Install master and worker
 RUN mkdir /opt/cryosparc_database && \
     curl -L https://get.cryosparc.com/download/master-latest/$LICENSE_ID -o /opt/cryosparc_master.tar.gz && \
-    curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o /opt/cryosparc_worker.tar.gz
-
-RUN tar xzvf /opt/cryosparc_master.tar.gz -C /opt/ && \
+    curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o /opt/cryosparc_worker.tar.gz && \
+    tar xzvf /opt/cryosparc_master.tar.gz -C /opt/ && \
     tar xzvf /opt/cryosparc_worker.tar.gz -C /opt/ && \
     rm /opt/cryosparc_master.tar.gz && \
     rm /opt/cryosparc_worker.tar.gz
@@ -49,6 +48,11 @@ RUN cd /opt/cryosparc_master && \
                     --hostname 127.0.0.1 \
                     --port 8080 \
                     --dbpath /opt/cryosparc_database \
+                    --yes
+
+RUN cd /opt/cryosparc_worker && \
+    ./install.sh    \
+                    --license $LICENSE_ID \
                     --yes
 #                    --standalone \
 #                    --initial_email "a@a.com" \
@@ -67,3 +71,5 @@ COPY --chown=1000:1000 requirements.txt /tmp/jobs_cmd/requirements.txt
 RUN pip3 install -r /tmp/jobs_cmd/requirements.txt
 COPY --chown=1000:1000 src /usr/local/bin
 COPY --chown=1000:1000 entrypoints /opt/cryosparc_master/entrypoints
+
+CMD ["/usr/bin/fish"]

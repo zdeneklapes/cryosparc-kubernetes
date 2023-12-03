@@ -1,0 +1,402 @@
+#!/usr/bin/env bash
+#
+# cryosparcw
+#
+# CryoSPARC worker wrapper
+# Only available on worker - used as entry point for jobs run by master/slurm
+# This script is updated during a worker update. 
+#
+# Instance-specific environment variables can be set in config.sh and those 
+# variables are read in when this script runs.
+# The config.sh file contains at least LICENSE_ID and GPU=true/false
+#   
+# assume that we have internet access at install time
+#
+# worker sets (common installation dir)
+#   - set of cluster nodes with same specs (GPU, SSD, CUDA version)
+#   - set of non-cluster nodes with same specs and shared FS (GPU, SSD, CUDA version)
+#   - individual non-cluster nodes without shared FS
+# sets can be grouped into "lanes" for the scheduler
+#
+
+set -e
+OS_NAME="$(uname -s)"
+
+# figure out where this script lives
+script_dir="$( cd "$(dirname "$0")" ; pwd -P )"
+
+# get to cryosparc root dir
+cd "$script_dir"/../
+root_dir=$(pwd -P)
+
+install_error() {
+    echo "ERROR: Is cryoSPARC installed? Run install.sh to complete installation. See https://guide.cryosparc.com for full instructions."  >&2
+    exit 1
+}
+
+# Functions to help us manage paths.  Second argument is the name of the
+# path variable to be modified (default: PATH)
+# From https://www.linuxfromscratch.org/blfs/view/6.3/postlfs/profile.html
+pathremove () {
+        local IFS=':'
+        local NEWPATH
+        local DIR
+        local PATHVARIABLE=${2:-PATH}
+        for DIR in ${!PATHVARIABLE} ; do
+                if [ "$DIR" != "$1" ] ; then
+                  NEWPATH=${NEWPATH:+$NEWPATH:}$DIR
+                fi
+        done
+        export $PATHVARIABLE="$NEWPATH"
+}
+
+pathprepend () {
+        pathremove $1 $2
+        local PATHVARIABLE=${2:-PATH}
+        export $PATHVARIABLE="$1${!PATHVARIABLE:+:${!PATHVARIABLE}}"
+}
+
+pathappend () {
+        pathremove $1 $2
+        local PATHVARIABLE=${2:-PATH}
+        export $PATHVARIABLE="${!PATHVARIABLE:+${!PATHVARIABLE}:}$1"
+}
+
+# get instance-specific global constant environment variables
+# this includes USE_GPU, USE_SSD, SSD_PATH, LICENSE_ID
+source config.sh || install_error
+
+if [[ $CRYOSPARC_DEVELOP != "true" ]] ; then
+    export CRYOSPARC_DEVELOP="false"
+fi
+
+# set up global constant environment variables (all start with CRYOSPARC_)
+export CRYOSPARC_ROOT_DIR=$root_dir
+export CRYOSPARC_PATH="$CRYOSPARC_ROOT_DIR/bin"
+export CRYOSPARC_CONDA_ENV="cryosparc_worker_env"
+
+activate_conda_env() {
+    if [[ -f "$CRYOSPARC_ROOT_DIR/deps/anaconda/etc/profile.d/conda.sh" ]]; then
+        source "$CRYOSPARC_ROOT_DIR/deps/anaconda/etc/profile.d/conda.sh"
+        conda activate $CRYOSPARC_CONDA_ENV || echo "Warning: Could not activate conda environment; this indicates that a cryoSPARC installation is either incomplete or in progress" 1>&2
+    else
+        echo "Warning: conda environment not found; this indicates that a cryoSPARC installation is either incomplete or in progress" 1>&2
+    fi
+}
+
+deactivate_conda_env() {
+    if command -v conda > /dev/null 2>&1; then
+        conda deactivate > /dev/null 2>&1 || true  # ignore any errors
+    fi
+    unset _CE_CONDA
+    unset CONDA_DEFAULT_ENV
+    unset CONDA_EXE
+    unset CONDA_PREFIX
+    unset CONDA_PROMPT_MODIFIER
+    unset CONDA_PYTHON_EXE
+    unset CONDA_SHLVL
+    unset PYTHONPATH
+}
+
+# always deactivate existing environments
+deactivate_conda_env
+
+# Only activate the conda env if this is not an update
+if [[ $1 != update ]] && [[ $1 != deps ]] && [[ $1 != forcedeps ]] ; then
+    activate_conda_env
+    # Set shell variables. Clear out LD_PRELOAD so that if cryosparm or cryosparcw
+    # are called with [mutual] recursion, they don't interfere with each other
+    export LD_PRELOAD=""
+    for lib in libpython3.8.so; do
+        lib_path="$CRYOSPARC_ROOT_DIR/deps/anaconda/envs/$CRYOSPARC_CONDA_ENV/lib/$lib"
+        if [[ -f "$lib_path" ]] ; then
+            export LD_PRELOAD="$lib_path${LD_PRELOAD:+:$LD_PRELOAD}"
+        fi
+    done
+    export PYTHONPATH="$CRYOSPARC_ROOT_DIR"
+    export PYTHONNOUSERSITE=true
+    # Various linear algebra libraries (including OpenBLAS, via L_BFGS_B) use openMP or other methods of internal parallelism.
+    # With no default setting, these will often spawn one thread per hardware thread on the CPU, which is usually waaaay too many.
+    # So, we globally set these vars to specify 1 thread. These can be overridden using functions like omp_set_num_threads
+    # if that parallel behaviour is ever found to be desirable.
+    export MKL_NUM_THREADS=1
+    export NUMEXPR_NUM_THREADS=1
+    export OMP_NUM_THREADS=1
+
+    # Numba CUDA binding options
+    export NUMBA_CUDA_USE_NVIDIA_BINDING=1
+    export NUMBA_CUDA_INCLUDE_PATH=$CONDA_PREFIX/include
+    # export NUMBA_CUDA_LOG_LEVEL=debug  # enable for additional GPU logging
+    # export NUMBA_CUDA_MAX_PENDING_DEALLOCS_COUNT=0  # disable staggered GPU deallocation
+fi
+
+pathprepend "$CRYOSPARC_PATH"
+
+# Requires conda environment to be activated
+finish_deps() {
+    # libtiff has a compilation step on first import where it writes a file to
+    # its installation directory. The following ensures the file is available
+    # immediately after installation, rather than at runtime when write
+    # permissions may no longer be available.
+    python -c "import libtiff"
+}
+
+# deal with insecure case:
+curl_opts=""
+if [[ "$CRYOSPARC_INSECURE" = "true" ]] ; then
+    curl_opts="-k "
+fi
+
+case "$1" in
+
+# --------------------------------------------------------------------------------------------
+    help)
+    echo " cryosparcw help"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    env)
+    vars=$(env | grep '^CRYOSPARC_')
+    while read -r line; do
+        echo 'export "'$line'"'
+    done <<< "$vars"
+    echo 'export "PATH='"$PATH"'"'
+    echo 'export "LD_LIBRARY_PATH='"$LD_LIBRARY_PATH"'"'
+    echo 'export "LD_PRELOAD='"$LD_PRELOAD"'"'
+    echo 'export "PYTHONPATH='"$PYTHONPATH"'"'
+    echo 'export "PYTHONNOUSERSITE='"$PYTHONNOUSERSITE"'"'
+    condavars=$(env | grep '^CONDA_')
+    while read -r line; do
+        echo 'export "'$line'"'
+    done <<< "$condavars"
+    numbavars=$(env | grep '^NUMBA_')
+    while read -r line; do
+        echo 'export "'$line'"'
+    done <<< "$numbavars"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    ipython)
+    cd "$CRYOSPARC_ROOT_DIR"
+    exec ipython
+    ;;
+# --------------------------------------------------------------------------------------------
+    ipynb)
+    cd "$CRYOSPARC_ROOT_DIR/cryosparc_compute/notebooks"
+    jupyter notebook --no-browser --port=$2
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    start_ipynb)
+    cd "$CRYOSPARC_ROOT_DIR"
+    screen -dmS ipynb_$2 bash -c "./bin/cryosparcw ipynb $2"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    deps)
+    shift
+    if [[ $CRYOSPARC_DEVELOP = "true" ]] ; then
+        echo "Use install_deps.sh only"
+        exit 1
+    fi
+    pathprepend "$CRYOSPARC_ROOT_DIR/deps/anaconda/bin"
+    export LD_PRELOAD=""
+    export PYTHONPATH=""
+    ./check_install_deps.sh
+    activate_conda_env
+    finish_deps
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    forcedeps)
+    shift
+    if [[ $CRYOSPARC_DEVELOP = "true" ]] ; then
+        echo "Use install_deps.sh only"
+        exit 1
+    fi
+    pathprepend "$CRYOSPARC_ROOT_DIR/deps/anaconda/bin"
+    export LD_PRELOAD=""
+    export PYTHONPATH=""
+    ./check_install_deps.sh --override
+    activate_conda_env
+    finish_deps
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    info)
+    python -c "import json; print(json.dumps({'hostname':'',\
+                                              'use_gpu':'',\
+                                              'use_ssd':'',\
+                                              'version':'',\
+                                              'install_path':'',\
+                                              }));"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    connect)
+    shift # past connect
+    python bin/connect.py "$@"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    _validate)
+    shift
+    python bin/validate.py "$@"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    gpulist)
+    shift
+    cd "$root_dir/bin"
+    python -c "import connect; connect.print_gpu_list()"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    resourceinfo)
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    run)
+    shift # past 'run'
+    cd "$CRYOSPARC_ROOT_DIR"
+    python -c "import cryosparc_compute.run as run; run.run()" "$@"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    call)
+    # do something in the cryosparcm environment, from current directory
+    shift # past 'call'
+    cd "$initial_dir"
+    cmd="$1"
+    shift # past command
+    exec $cmd "$@"
+    ;;
+# --------------------------------------------------------------------------------------------
+    errmsg)
+    shift # past 'errmsg'
+    cd "$CRYOSPARC_ROOT_DIR"
+    python -c "import cryosparc_compute.run as run; run.errmsg_to_streamlog()" "$@"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    warnmsg)
+    shift # past 'warnmsg'
+    cd "$CRYOSPARC_ROOT_DIR"
+    python -c "import cryosparc_compute.run as run; run.warnmsg_to_streamlog()" "$@"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    infomsg)
+    shift # past 'infomsg'
+    cd "$CRYOSPARC_ROOT_DIR"
+    python -c "import cryosparc_compute.run as run; run.infomsg_to_streamlog()" "$@"
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    update)
+    export LD_PRELOAD="" 
+
+    #allow user to pass through an "override" parameter which allows dependencies to be reinstalled without checking verions
+    OVERRIDE=false
+    if [[ ! -z "$2" ]]; then
+        if [[ "$2" == "--override" ]]; then
+            OVERRIDE=true
+        fi
+    fi
+
+    # assume the cryosparc_worker.tar.gz file has been replaced inside root dir
+    # just delete deps and everything and then untar this file and run deps again
+    cd "$CRYOSPARC_ROOT_DIR"
+    if [[ ! -f cryosparc_worker.tar.gz ]] ; then
+        echo " cryosparc_worker.tar.gz file is missing. "
+        exit 1
+    fi
+
+    if [[ $OVERRIDE == "false" ]]; then
+        echo "Updating... checking versions"
+        current_version=$(<version)
+
+        # If downgrade to v2, cryosparc_worker/version will not exist
+        new_version=$(tar -xf cryosparc_worker.tar.gz --to-stdout cryosparc_worker/version || tar -xf cryosparc_worker.tar.gz --to-stdout cryosparc2_worker/version)
+
+        echo "Current version $current_version - New version $new_version "
+        if [[ "$new_version" == "$current_version" ]] ; then
+            echo "Already up to date"
+            exit 0
+        fi
+    else
+        echo "Forcing update..."
+    fi
+
+    echo "============================="
+    echo "Updating worker..."
+    echo "============================="
+    {
+        echo "  Deleting old files..."
+        # wipe out everythign that could be updated except deps because of the hash
+        rm -rf cryosparc_compute cryosparc_tools deps_bundle patch
+        echo "  Extracting..."
+        tar -xz --overwrite -f cryosparc_worker.tar.gz --strip-components=1 --directory ./ # because tar contains cryosparc_worker as top-level-dir
+        echo "  Cleaning up..."
+        rm -f cryosparc_worker.tar.gz cryosparc2_worker.tar.gz  # To avoid potential confusion betwen 2 and 3 updates
+        echo "  Done."
+        echo "  Updating dependencies..."
+
+        if [[ $OVERRIDE == "true" ]]; then
+            cryosparcw forcedeps # forces installation of all bz2 and targz pkgs
+        else
+            cryosparcw deps # installs all new bz2 and targz pkgs
+        fi
+
+        echo " "
+        echo "Successfully updated."
+        echo " "
+    }; exit
+
+
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    patch)
+    shift # past 'patch'
+
+    # Extract the given tarball argument into the parent directory
+    patch_file="cryosparc_worker_patch.tar.gz"
+    if [[ -f "${patch_file}" ]]; then
+        tar -xz --overwrite -f "${patch_file}" --strip-components=1 --directory ./
+        result=$?
+        if [[ $result == "0" ]]; then
+            echo "Worker patch successfully applied."
+            rm "${patch_file}"
+        fi
+        exit $result
+    fi
+
+    # Not found
+    echo "ERROR: Cannot apply patch: ${patch_file} not found."
+    echo "Download it from the master node with the command"
+    echo ""
+    echo "    cryosparcm patch --download"
+    echo ""
+    echo "then copy it to"
+    echo ""
+    echo "    ${root_dir}"
+    echo ""
+    echo "and re-run this command."
+    exit 1
+    ;;
+# --------------------------------------------------------------------------------------------
+    make)
+    build_root="${CRYOSPARC_BUILD_ROOT:-${CRYOSPARC_ROOT_DIR}}"
+    shift
+    cd "${build_root}/cryosparc_compute"
+    CPATH=$CPATH:/usr/include/x86_64-linux-gnu/ LIBRARY_PATH=$LIBRARY_PATH:/usr/lib/x86_64-linux-gnu CRYOSPARC_ROOT_DIR="${build_root}" make $@
+    exit 0
+    ;;
+# --------------------------------------------------------------------------------------------
+    *)
+    echo "Unknown cryosparcw command $1"
+    exit 1
+    ;;
+
+esac
