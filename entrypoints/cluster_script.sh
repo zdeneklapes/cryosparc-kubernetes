@@ -43,4 +43,6 @@ export CUDA_VISIBLE_DEVICES=$available_devs
 
 echo "Running cryosparc job {{ job_uid }} on {{ num_gpu }} GPUs"
 
-{{ worker_bin_path }} run  --project {{ project_uid }} --job {{ job_uid }} --master_hostname cryosparc-service --master_command_port 8082
+# TODO: Do I need to specify the gpu id?
+
+{{ worker_bin_path }} run  --project {{ project_uid }} --job {{ job_uid }} --master_hostname cryosparc-service --master_command_core_port 8082

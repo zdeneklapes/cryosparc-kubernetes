@@ -114,12 +114,13 @@ def create_service_object(args: Namespace):
 def create_job_object(args: Namespace):
     # Configurate Pod template container
     interpreter = "/bin/bash"
+    # TODO: Do I need to specify the gpu id?
     worker_connect_cmd = f"/opt/cryosparc_worker/bin/cryosparcw connect --worker {args.job_name} --master {args.master_hostname} --port {args.master_port} --ssdpath {args.ssd_path}"
     run_cmd = args.run_cmd
     command = f"{worker_connect_cmd} && {interpreter} {run_cmd}"
     # command = f"{interpreter} {run_cmd}"
-    print(f"{interpreter} -c \"{command}\"")
-    exit(0)
+    # print(f"{interpreter} -c \"{command}\"")
+    # exit(0)
     # Instantiate the job object
     job = client.V1Job(
         api_version="batch/v1",
