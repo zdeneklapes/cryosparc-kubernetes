@@ -1,5 +1,6 @@
 #!/bin/bash
-# Inspiration src: https://github.com/slaclab/cryosparc-docker/blob/master/cryosparc-server.sh
+
+# Inspiration: https://github.com/slaclab/cryosparc-docker/blob/master/cryosparc-server.sh
 
 CRYOSPARC_MASTER_DIR=${CRYOSPARC_MASTER_DIR:-"/opt/cryosparc_master"}
 CRYOSPARC_WORKER_DIR=${CRYOSPARC_WORKER_DIR:-"/opt/cryosparc_worker"}
@@ -11,14 +12,16 @@ function start_master() {
 
     CRYOSPARC_MASTER_DIR=${CRYOSPARC_MASTER_DIR:-"/opt/cryosparc_master"}
     CRYOSPARC_WORKER_DIR=${CRYOSPARC_WORKER_DIR:-"/opt/cryosparc_worker"}
-    export PATH=${CRYOSPARC_MASTER_DIR}/bin:${CRYOSPARC_WORKER_DIR}/bin:${CRYOSPARC_MASTER_DIR}/deps/anaconda/bin/:$PATH
+#    export PATH=${CRYOSPARC_MASTER_DIR}/bin:${CRYOSPARC_WORKER_DIR}/bin:${CRYOSPARC_MASTER_DIR}/deps/anaconda/bin/:$PATH
 
     export CRYOSPARC_MASTER_HOSTNAME=${CRYOSPARC_MASTER_HOSTNAME:-$(hostname -s)}
     echo "setting CRYOSPARC_MASTER_HOSTNAME=${CRYOSPARC_MASTER_HOSTNAME}"
     echo "Starting cryosparc master..."
 
     cd ${CRYOSPARC_MASTER_DIR}
-    cryosparcm start || cryosparcm restart
+    ${CRYOSPARC_MASTER_DIR}/bin/cryosparcm start || cryosparcm restart
+    ./bin/cryosparcm start || cryosparcm restart
+    ./bin/cryosparcm cluster connect
     cd -
 
     echo "Success starting cryosparc master!"
@@ -26,20 +29,27 @@ function start_master() {
 
 function create_user() {
     # Create user
+    # ENVIROMENT VARIABLES:
+    #   EMAIL - email of user (default: a@a)
+    #   USERNAME - username of user (default: a)
+    #   PASSWORD - password of user (default: a)
+    #   FIRSTNAME - firstname of user (default: John)
+    #   LASTNAME - lastname of user (default: Doe)
 
-    email="a@a.com"
-    username="a"
-    password="a"
-    firstname="John"
-    lastname="Doe"
+    # Check ENV variables
+    if [ -z "${EMAIL}" ]; then EMAIL="a@a.com"; fi
+    if [ -z "${USERNAME}" ]; then USERNAME="a"; fi
+    if [ -z "${PASSWORD}" ]; then PASSWORD="a"; fi
+    if [ -z "${FIRSTNAME}" ]; then FIRSTNAME="John"; fi
+    if [ -z "${LASTNAME}" ]; then LASTNAME="Doe"; fi
 
-    cd ${CRYOSPARC_MASTER_DIR}/entrypoints/
-    ../bin/cryosparcm createuser \
-        --email ${email} \
-        --password ${password} \
-        --username ${username} \
-        --firstname ${firstname} \
-        --lastname ${lastname}
+    cd ${CRYOSPARC_MASTER_DIR}
+    ${CRYOSPARC_MASTER_DIR}/bin/cryosparcm createuser \
+        --email ${EMAIL} \
+        --password ${PASSWORD} \
+        --username ${USERNAME} \
+        --firstname ${FIRSTNAME} \
+        --lastname ${LASTNAME}
     cd -
 }
 
@@ -57,7 +67,7 @@ function start_worker() {
 
     export USER="a"
     cd ${CRYOSPARC_WORKER_DIR}
-    ${CRYOSPARC_WORKER_DIR}/bin/cryosparcw connect \
+    ./bin/cryosparcw connect \
         --worker ${CRYOSPARC_MASTER_HOSTNAME} \
         --master ${CRYOSPARC_MASTER_HOSTNAME} \
         --port 8080 \

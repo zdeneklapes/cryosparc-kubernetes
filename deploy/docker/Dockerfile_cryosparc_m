@@ -16,4 +16,4 @@ RUN fakeroot chown -R 1000:1000 /opt/cryosparc_master/ # TODO: takes too long
 COPY --chown=1000:1000 requirements.txt /tmp/jobs_cmd/requirements.txt
 RUN cd /tmp/jobs_cmd && pip3 install -r requirements.txt
 COPY --chown=1000:1000 src /usr/local/bin
-COPY --chown=1000:1000 entrypoints /opt/cryosparc_master/entrypoints
+COPY --chown=1000:1000 entrypoints /opt/cryosparc_master/bin

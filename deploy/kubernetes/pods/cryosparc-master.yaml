@@ -1,10 +1,10 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  name: pod-cryosparc-ubuntu-22-04
+  name: cryosparc-master
 spec:
   containers:
-    - name: cryosparc-ubuntu-22-04
+    - name: cryosparc-master
       image: cerit.io/cerit/cryosparc:master-v0.2
       imagePullPolicy: Always
       command: [ "/bin/bash", "-c" ]
@@ -22,7 +22,7 @@ spec:
           memory: "4Gi"
           cpu: "2"
 #          nvidia.com/gpu: "1" # NOTE: Not neccecary here
-          nvidia.com/mig-1g.10gb: "1" # NOTE: Not neccecary here
+#          nvidia.com/mig-1g.10gb: "1" # NOTE: Not neccecary here
       securityContext: # Container security context
 #        privileged: true
         runAsNonRoot: true

@@ -4,7 +4,8 @@ FROM cerit.io/os/ubuntu:22.04-user
 
 # Cryosparc
 ARG LICENSE_ID=74f2d264-77d7-11ed-bb40-63f6990bba5f
-#ARG CRYOSPARC_PATH=/opt/cryosparc_master
+ARG CRYOSPARC_PATH_MASTER=/opt/cryosparc_master
+ARG CRYOSPARC_PATH_WORKER=/opt/cryosparc_worker
 
 RUN apt-get update && fakeroot apt-get -y --no-install-recommends install \
     curl \
@@ -29,27 +30,30 @@ RUN apt-get update && fakeroot apt-get -y --no-install-recommends install \
 
 RUN fakeroot addgroup --gid 1000 cryo &&  fakeroot adduser --gid 1000 --uid 1000 --disabled-password --gecos cryo cryo
 
-# Install master and worker
-RUN mkdir /opt/cryosparc_database && \
-    curl -L https://get.cryosparc.com/download/master-latest/$LICENSE_ID -o /opt/cryosparc_master.tar.gz && \
-    curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o /opt/cryosparc_worker.tar.gz && \
-    tar xzvf /opt/cryosparc_master.tar.gz -C /opt/ && \
-    tar xzvf /opt/cryosparc_worker.tar.gz -C /opt/ && \
-    rm /opt/cryosparc_master.tar.gz && \
-    rm /opt/cryosparc_worker.tar.gz
+RUN mkdir /opt/cryosparc_database
 
-#RUN cd /opt/cryosparc_master && ./install.sh --license $LICENSE_ID --yes --dbpath /opt/cryosparc_database --port 8080 --hostname 127.0.0.1
+# Download master
+RUN curl -L https://get.cryosparc.com/download/master-latest/$LICENSE_ID -o $CRYOSPARC_PATH_MASTER.tar.gz && \
+    tar xzvf $CRYOSPARC_PATH_MASTER.tar.gz -C /opt/ && \
+    rm $CRYOSPARC_PATH_MASTER.tar.gz
 
-RUN cd /opt/cryosparc_master && \
+# Download worker
+RUN curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o $CRYOSPARC_PATH_WORKER.tar.gz && \
+    tar xzvf $CRYOSPARC_PATH_WORKER.tar.gz -C /opt/ && \
+    rm $CRYOSPARC_PATH_WORKER.tar.gz
+
+#RUN cd $CRYOSPARC_PATH_MASTER && ./install.sh --license $LICENSE_ID --yes --dbpath /opt/cryosparc_database --port 8080 --hostname 127.0.0.1
+
+RUN cd $CRYOSPARC_PATH_MASTER && \
     ./install.sh    \
                     --license $LICENSE_ID \
-                    --worker_path /opt/cryosparc_worker/ \
+                    --worker_path $CRYOSPARC_PATH_WORKER/ \
                     --hostname 127.0.0.1 \
                     --port 8080 \
                     --dbpath /opt/cryosparc_database \
                     --yes
 
-RUN cd /opt/cryosparc_worker && \
+RUN cd $CRYOSPARC_PATH_WORKER && \
     ./install.sh    \
                     --license $LICENSE_ID \
                     --yes
@@ -60,15 +64,17 @@ RUN cd /opt/cryosparc_worker && \
 #                    --initial_firstname "John" \
 #                    --initial_lastname "Doe" \
 
-RUN sed -i 's:    disk_has_space=.*:    disk_has_space="true":g'  /opt/cryosparc_master/bin/cryosparcm
-RUN echo "CRYOSPARC_FORCE_HOSTNAME=true" >>  /opt/cryosparc_master/config.sh && echo "CRYOSPARC_HOSTNAME_CHECK=false" >> /opt/cryosparc_master/config.sh
-RUN fakeroot chown -R 1000:1000 /opt/cryosparc_master/
-RUN fakeroot chown -R 1000:1000 /opt/cryosparc_worker/
+RUN sed -i 's:    disk_has_space=.*:    disk_has_space="true":g'  $CRYOSPARC_PATH_MASTER/bin/cryosparcm
+RUN echo "CRYOSPARC_FORCE_HOSTNAME=true" >>  $CRYOSPARC_PATH_MASTER/config.sh && echo "CRYOSPARC_HOSTNAME_CHECK=false" >> $CRYOSPARC_PATH_MASTER/config.sh
+RUN fakeroot chown -R 1000:1000 $CRYOSPARC_PATH_MASTER/
+RUN fakeroot chown -R 1000:1000 $CRYOSPARC_PATH_WORKER/
 
 # Install jobs_cmd
 COPY --chown=1000:1000 requirements.txt /tmp/jobs_cmd/requirements.txt
 RUN pip3 install -r /tmp/jobs_cmd/requirements.txt
 COPY --chown=1000:1000 src /usr/local/bin
-COPY --chown=1000:1000 entrypoints /opt/cryosparc_master/entrypoints
+# to bin/ because cluster_config.json need to be in path for cryosparcw to find it
+COPY --chown=1000:1000 entrypoints $CRYOSPARC_PATH_MASTER
+#COPY --chown=1000:1000 entrypoints $CRYOSPARC_PATH_WORKER
 
 CMD ["/usr/bin/fish"]

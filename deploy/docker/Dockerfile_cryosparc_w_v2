@@ -4,7 +4,7 @@ FROM cerit.io/os/ubuntu:22.04-user
 
 # Cryosparc
 ARG LICENSE_ID=74f2d264-77d7-11ed-bb40-63f6990bba5f
-#ARG CRYOSPARC_PATH=/opt/cryosparc_master
+ARG CRYOSPARC_PATH=/opt/cryosparc_worker
 
 RUN apt-get update && fakeroot apt-get -y --no-install-recommends install \
     curl \
@@ -30,21 +30,21 @@ RUN apt-get update && fakeroot apt-get -y --no-install-recommends install \
 RUN fakeroot addgroup --gid 1000 cryo &&  fakeroot adduser --gid 1000 --uid 1000 --disabled-password --gecos cryo cryo
 
 # Install worker
-RUN curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o /opt/cryosparc_worker.tar.gz && \
-    tar xzvf /opt/cryosparc_worker.tar.gz -C /opt/ && \
-    rm /opt/cryosparc_worker.tar.gz
+RUN curl -L https://get.cryosparc.com/download/worker-latest/$LICENSE_ID -o $CRYOSPARC_PATH.tar.gz && \
+    tar xzvf $CRYOSPARC_PATH.tar.gz -C /opt/ && \
+    rm $CRYOSPARC_PATH.tar.gz
 
 
-RUN cd /opt/cryosparc_worker && \
+RUN cd $CRYOSPARC_PATH && \
     ./install.sh    \
                     --license $LICENSE_ID \
                     --yes
 
-RUN fakeroot chown -R 1000:1000 /opt/cryosparc_worker/
+RUN fakeroot chown -R 1000:1000 $CRYOSPARC_PATH/
 
 # Install jobs_cmd
 COPY --chown=1000:1000 requirements.txt /tmp/jobs_cmd/requirements.txt
 RUN pip3 install -r /tmp/jobs_cmd/requirements.txt
 COPY --chown=1000:1000 src /usr/local/bin
-
-#CMD ["/usr/bin/fish"]
+# to bin/ because cluster_config.json need to be in path for cryosparcw to find it
+COPY --chown=1000:1000 entrypoints $CRYOSPARC_PATH

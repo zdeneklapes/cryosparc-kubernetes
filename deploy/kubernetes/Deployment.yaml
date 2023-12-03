@@ -21,10 +21,13 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cryosparc-master-container
-          image: cerit.io/cerit/cryosparc:master-worker-v0.2
+          image: cerit.io/cerit/cryosparc:master-v0.2
+#          image: cerit.io/cerit/cryosparc:master-worker-v0.2
           imagePullPolicy: Always
           command: [ "/bin/bash", "-c" ]
-          args: [ "/opt/cryosparc_master/entrypoints/entrypoint.sh start_master create_user start_worker heartbeat" ]
+          args: [ "/opt/cryosparc_master/entrypoint.sh start_master create_user heartbeat" ]
+#          args: [ "/opt/cryosparc_master/entrypoint.sh start_master create_user start_worker heartbeat" ]
+#          args: [ "/opt/cryosparc_worker/entrypoint.sh start_master create_user start_worker heartbeat" ]
 #          env:
 #            - name: COMPOSE_HTTP_TIMEOUT
 #              value: "480"

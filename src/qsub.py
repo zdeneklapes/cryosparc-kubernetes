@@ -117,6 +117,8 @@ def create_job_object(args: Namespace):
     worker_connect_cmd = "/opt/cryosparc_worker/bin/cryosparcw connect --worker --master 'cryosparc-service' --port 8080 --ssdpath /mnt"
     run_cmd = args.run_cmd
     command = f"{worker_connect_cmd} && {interpreter} {run_cmd}"
+    print(f"{interpreter} -c \"{command}\"")
+    exit(0)
     # Instantiate the job object
     job = client.V1Job(
         api_version="batch/v1",
@@ -132,8 +134,8 @@ def create_job_object(args: Namespace):
                         client.V1Container(
                             name=args.job_name,
                             image=args.image,
-                            command=[command[0]],
-                            args=command[1:],
+                            command=[interpreter],
+                            args=["-c", command],
                             security_context=client.V1SecurityContext(
                                 run_as_user=1000,
                                 run_as_group=1000,
@@ -298,7 +300,7 @@ def main():
             json.dump(job.to_dict(), f)
 
     try:
-        create_service(batch_v1, create_service_object(args), args)
+        # create_service(batch_v1, create_service_object(args), args)
         create_job(batch_v1, job, args)
     except client.rest.ApiException as e:
         print("Exception when calling BatchV1Api->create_namespaced_job: %s" % e)
