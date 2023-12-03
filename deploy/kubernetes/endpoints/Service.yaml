@@ -14,11 +14,11 @@ spec:
       protocol: TCP
       targetPort: 8080 # ContainerPort - spec.template.spec.containers.ports.containerPort
       port: 80 # Ingress - spec.rules.http.backend.service.port.number
-#    - name: cryosparc-port-2
-#      protocol: TCP
-#      targetPort: 8081 # ContainerPort - spec.template.spec.containers.ports.containerPort
-#      port: 8081 # Ingress - spec.rules.http.backend.service.port.number
-#    - name: cryosparc-port-3
-#      protocol: TCP
-#      targetPort: 8082 # ContainerPort - spec.template.spec.containers.ports.containerPort
-#      port: 8082 # Ingress - spec.rules.http.backend.service.port.number
+    - name: cryosparc-port-2
+      protocol: TCP
+      targetPort: 8081 # ContainerPort - spec.template.spec.containers.ports.containerPort
+      port: 8081 # Ingress - spec.rules.http.backend.service.port.number
+    - name: cryosparc-port-3
+      protocol: TCP
+      targetPort: 8082 # ContainerPort - spec.template.spec.containers.ports.containerPort
+      port: 8082 # Ingress - spec.rules.http.backend.service.port.number

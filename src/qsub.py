@@ -114,9 +114,10 @@ def create_service_object(args: Namespace):
 def create_job_object(args: Namespace):
     # Configurate Pod template container
     interpreter = "/bin/bash"
-    worker_connect_cmd = "/opt/cryosparc_worker/bin/cryosparcw connect --worker --master 'cryosparc-service' --port 8080 --ssdpath /mnt"
+    worker_connect_cmd = f"/opt/cryosparc_worker/bin/cryosparcw connect --worker {args.job_name} --master {args.master_hostname} --port {args.master_port} --ssdpath {args.ssd_path}"
     run_cmd = args.run_cmd
     command = f"{worker_connect_cmd} && {interpreter} {run_cmd}"
+    # command = f"{interpreter} {run_cmd}"
     print(f"{interpreter} -c \"{command}\"")
     exit(0)
     # Instantiate the job object
@@ -144,6 +145,21 @@ def create_job_object(args: Namespace):
                                     drop=["ALL"]
                                 ),
                             ),
+                            env=[
+                                client.V1EnvVar(
+                                    name="USER",
+                                    value="cryo"
+                                ),
+                                # client.V1EnvVar(
+                                #     name="USER",
+                                #     value_from=client.V1EnvVarSource(
+                                #         secret_key_ref=client.V1SecretKeySelector(
+                                #             name="cryosparc-secret",
+                                #             key="CRYOSPARC_LICENSE_ID"
+                                #         )
+                                #     )
+                                # ),
+                            ],
                             resources=client.V1ResourceRequirements(
                                 requests={"cpu": args.num_cpu, "memory": args.memory},
                                 limits={
@@ -239,6 +255,9 @@ def parse_arguments():
         help="Name of the GPU resource"
     )
 
+    args.add_argument("--master-port", type=int, default=8080, help="Number of CPU cores to use")
+    args.add_argument("--master-hostname", type=str, default="cryosparc-service", help="Number of CPU cores to use")
+    args.add_argument("--ssd-path", type=str, default="/mnt", help="Where to store data")
     args.add_argument("--num-cpu", type=int, default=1, help="Number of CPU cores to use")
     args.add_argument("--num-gpu", type=int, default=1, help="Number of GPU cores to use")
     args.add_argument("--memory", type=str, default="10Gi", help="Memory to use")

@@ -39,5 +39,8 @@ do
 done
 export CUDA_VISIBLE_DEVICES=$available_devs
 
-{{ run_cmd }}
+#{{ run_cmd }}
 
+echo "Running cryosparc job {{ job_uid }} on {{ num_gpu }} GPUs"
+
+{{ worker_bin_path }} run  --project {{ project_uid }} --job {{ job_uid }} --master_hostname cryosparc-service --master_command_port 8082
