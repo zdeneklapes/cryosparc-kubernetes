@@ -272,6 +272,7 @@ def parse_arguments():
         "--image",
         type=str,
         default="cerit.io/cerit/cryosparc:worker-v4.4.1",
+        # default="cerit.io/cerit/cryosparc:worker-v0.3",
         help="Image name"
     )
 

@@ -62,8 +62,8 @@ spec:
         ports:
         - containerPort: 8080
         volumeMounts:
-{{/*        - name: brno14*/}}
-{{/*          mountPath: /mnt/brno14*/}}
+        - name: brno14
+          mountPath: /mnt/brno14
         - name: db
           mountPath: /opt/cryosparc_database
         - name: clusterinfo
@@ -75,9 +75,9 @@ spec:
         - name: share
           mountPath: /mnt/share
       volumes:
-{{/*      - name: brno14*/}}
-{{/*        persistentVolumeClaim:*/}}
-{{/*          claimName: pvc-cryosparc-brno14*/}}
+      - name: brno14
+        persistentVolumeClaim:
+          claimName: pvc-cryosparc-brno14
       - name: db
         persistentVolumeClaim:
           claimName: pvc-cryosparc-db

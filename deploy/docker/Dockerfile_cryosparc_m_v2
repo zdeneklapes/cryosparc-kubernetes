@@ -51,7 +51,7 @@ RUN fakeroot chown -R 1000:1000 $CRYOSPARC_PATH/
 
 # Install jobs_cmd
 COPY --chown=1000:1000 requirements.txt /tmp/jobs_cmd/requirements.txt
-RUN pip3 install -r /templates/jobs_cmd/requirements.txt
+RUN pip3 install -r /tmp/jobs_cmd/requirements.txt
 COPY --chown=1000:1000 src /usr/local/bin
 # to bin/ because cluster_config.json need to be in path for cryosparcw to find it
 COPY --chown=1000:1000 entrypoints $CRYOSPARC_PATH
