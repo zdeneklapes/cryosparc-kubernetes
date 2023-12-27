@@ -1,0 +1,8 @@
+master:
+  persistence:
+    enabled: false  # Setting it to false to disable PV creation
+#    existingClaims:
+#      - name: pvc-cryosparc-brno14
+#      - name: pvc-cryosparc-db
+#      - name: pvc-cryosparc-share
+

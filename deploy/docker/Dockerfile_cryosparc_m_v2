@@ -55,3 +55,5 @@ RUN pip3 install -r /tmp/jobs_cmd/requirements.txt
 COPY --chown=1000:1000 src /usr/local/bin
 # to bin/ because cluster_config.json need to be in path for cryosparcw to find it
 COPY --chown=1000:1000 entrypoints $CRYOSPARC_PATH
+
+WORKDIR $CRYOSPARC_PATH

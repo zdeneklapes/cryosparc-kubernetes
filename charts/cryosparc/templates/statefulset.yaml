@@ -12,6 +12,7 @@ spec:
   template:
     metadata:
       annotations: {}
+{{/*        checksum/config: {{ include (print $.Template.BasePath "/freeradius-cf.yaml") . | sha256sum }}*/}}
       labels:
         app: cryosparc-master
     spec:
@@ -28,8 +29,8 @@ spec:
         - /bin/bash
         - -c
         - '/opt/cryosparc_master/bin/cryosparcm start; /opt/cryosparc_master/bin/cryosparcm createuser --email "$cryosparc_email" --password "$cryosparc_password" --username "$cryosparc_username" --firstname "$cryosparc_firstname" --lastname "$cryosparc_lastname"; /opt/cryosparc_master/bin/cryosparcm cluster connect; sleep infinity'
-        image: cerit.io/cerit/cryosparc:master-v4.4.1
-{{/*        image: cerit.io/cerit/cryosparc:master-v0.2*/}}
+{{/*        image: cerit.io/cerit/cryosparc:master-v4.4.1*/}}
+        image: cerit.io/cerit/cryosparc:master-v0.2
 {{/*        command: [ "/bin/bash", "-c" ]*/}}
 {{/*        args: [ "/opt/cryosparc_master/entrypoint.sh start_master create_user heartbeat" ]*/}}
         imagePullPolicy: Always

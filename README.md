@@ -37,7 +37,11 @@ M=0 W=0 MW=1 ./make.sh pack send build_push_cryosparc_on_remote clean_kubernetes
 
 # Other resources
 
-[//]: # (URL)
-
 - [Cryosparc-Docs](https://cryosparc.com/docs/)
 - [Multi-Container Pods in Kubernetes](https://linchpiner.github.io/k8s-multi-container-pods.html#:~:text=A%20Pod%20is%20is%20the,containers%20are%20relatively%20tightly%20coupled.)
+
+# TODO
+ 
+1. helm chart
+2. configmaps (yaml files) to configure qsub.py
+3. more unique `cluster_info.json` and `cluster_script.sh` to be able to work with multiple gpus

@@ -271,8 +271,8 @@ def parse_arguments():
     args.add_argument(
         "--image",
         type=str,
-        default="cerit.io/cerit/cryosparc:worker-v4.4.1",
-        # default="cerit.io/cerit/cryosparc:worker-v0.3",
+        # default="cerit.io/cerit/cryosparc:worker-v4.4.1",
+        default="cerit.io/cerit/cryosparc:worker-v0.3",
         help="Image name"
     )
 
@@ -289,7 +289,7 @@ def parse_arguments():
     args.add_argument("--num-cpu", type=int, default=1, help="Number of CPU cores to use")
     args.add_argument("--num-gpu", type=int, default=0, help="Number of GPU cores to use")
     args.add_argument("--gpu-type", type=str, default="", help="GPU node selector")
-    args.add_argument("--memory", type=str, default="62Gi", help="Memory to use")
+    args.add_argument("--memory", type=str, default="8Gi", help="Memory to use")
     args.add_argument("--walltime", type=str, default="02:00:00", help="Walltime")
     args.add_argument("--scratch-local", type=str, default="1000Mi", help="Number of GPU cores to use")
     args.add_argument("--command", type=str, help="Command to run in container")

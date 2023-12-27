@@ -108,10 +108,12 @@ function build_push_cryosparc_on_remote() {
     folder_cryosparc="~/repos/cryosparc"
 
     local dockerfile_master="deploy/docker/Dockerfile_cryosparc_m_v2"
-    local dockerfile_worker="deploy/docker/Dockerfile_cryosparc_w_v3"
-    local dockerfile_master_worker="deploy/docker/Dockerfile_cryosparc_mw_v2"
     local tag_master="cerit.io/cerit/cryosparc:master-v0.2"
-    local tag_worker="cerit.io/cerit/cryosparc:worker-v0.3"
+
+    local dockerfile_worker="deploy/docker/Dockerfile_cryosparc_w_v2"
+    local tag_worker="cerit.io/cerit/cryosparc:worker-v0.2"
+
+    local dockerfile_master_worker="deploy/docker/Dockerfile_cryosparc_mw_v2"
     local tag_master_worker="cerit.io/cerit/cryosparc:master-worker-v0.2"
 
     if [ ${M} -eq 1 ] && [ ${W} -eq 1 ] && [ ${MW} -eq 1 ]; then
