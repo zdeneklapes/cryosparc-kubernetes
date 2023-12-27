@@ -1,0 +1,26 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: cryosparc-master
+spec:
+  selector:
+    app: cryosparc-master
+  ports:
+    - port: 8080
+      name: web
+      targetPort: 8080
+    - port: 8081
+      name: db
+      targetPort: 8081
+    - port: 8082
+      name: core
+      targetPort: 8082
+    - port: 8083
+      name: vis
+      targetPort: 8083
+    - port: 8085
+      name: rtp
+      targetPort: 8085
+    - port: 8086
+      name: node
+      targetPort: 8086

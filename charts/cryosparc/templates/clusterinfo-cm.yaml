@@ -1,0 +1,9 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  cluster_info.json: |-
+{{ .Files.Get "files/cluster_info.json" | indent 4 }}
+  cluster_script.sh: |-
+{{ .Files.Get "files/cluster_script.sh" | indent 4 }}

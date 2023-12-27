@@ -6,6 +6,7 @@ import json
 from pprint import pprint
 import yaml
 import re
+import os
 
 from kubernetes import client, config
 from kubernetes.client.models import V1Job
@@ -117,8 +118,8 @@ def create_job_object(args: Namespace):
     # TODO: Do I need to specify the gpu id?
     worker_connect_cmd = f"/opt/cryosparc_worker/bin/cryosparcw connect --worker {args.job_name} --master {args.master_hostname} --port {args.master_port} --ssdpath {args.ssd_path}"
     run_cmd = args.run_cmd
-    command = f"{worker_connect_cmd} && {interpreter} {run_cmd}"
-    # command = f"{interpreter} {run_cmd}"
+    #command = f"{worker_connect_cmd} && {interpreter} {run_cmd}"
+    command = f"{interpreter} {run_cmd}"
     # print(f"{interpreter} -c \"{command}\"")
     # exit(0)
     # Instantiate the job object
@@ -127,7 +128,8 @@ def create_job_object(args: Namespace):
         kind="Job",
         metadata=client.V1ObjectMeta(name=args.job_name),
         spec=client.V1JobSpec(
-            backoff_limit=0,  # TODO: What is the correct value?
+            backoff_limit=0,
+            ttl_seconds_after_finished=120,
             template=client.V1PodTemplateSpec(
                 metadata=client.V1ObjectMeta(labels={"app": args.job_name}),
                 spec=client.V1PodSpec(
@@ -172,7 +174,15 @@ def create_job_object(args: Namespace):
                             volume_mounts=[
                                 client.V1VolumeMount(
                                     name="cryosparc-volume-1",
-                                    mount_path="/mnt"
+                                    mount_path="/mnt/share"
+                                ),
+                                client.V1VolumeMount(
+                                    name="cryosparc-volume-2",
+                                    mount_path="/mnt/brno14"
+                                ),
+                                client.V1VolumeMount(
+                                    name="cryosparc-shm",
+                                    mount_path="/dev/shm"
                                 )
                             ]
                         )
@@ -181,7 +191,20 @@ def create_job_object(args: Namespace):
                         client.V1Volume(
                             name="cryosparc-volume-1",
                             persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                claim_name="pvc-cryosparc-scratch"
+                                claim_name="pvc-cryosparc-share"
+                            )
+                        ),
+                        client.V1Volume(
+                            name="cryosparc-volume-2",
+                            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                claim_name="pvc-cryosparc-brno14"
+                            )
+                        ),
+                        client.V1Volume(
+                            name="cryosparc-shm",
+                            empty_dir=client.V1EmptyDirVolumeSource(
+                                medium="Memory",
+                                size_limit=args.memory
                             )
                         )
                     ],
@@ -197,6 +220,10 @@ def create_job_object(args: Namespace):
             ),
         ),
     )
+
+    if args.gpu_type != "":
+        job.spec.template.spec.node_selector={"nvidia.com/gpu.product": args.gpu_type}
+
     return job
 
 
@@ -244,24 +271,24 @@ def parse_arguments():
     args.add_argument(
         "--image",
         type=str,
-        # default="cerit.io/cerit/cryosparc:master-v0.2",
-        default="cerit.io/cerit/cryosparc:worker-v0.2",
+        default="cerit.io/cerit/cryosparc:worker-v4.4.1",
         help="Image name"
     )
 
     args.add_argument(
         '--name-gpu', type=str,
-        # default="nvidia.com/gpu",
-        default="nvidia.com/mig-1g.10gb",
+        default="nvidia.com/gpu",
+        # default="nvidia.com/mig-1g.10gb",
         help="Name of the GPU resource"
     )
 
     args.add_argument("--master-port", type=int, default=8080, help="Number of CPU cores to use")
-    args.add_argument("--master-hostname", type=str, default="cryosparc-service", help="Number of CPU cores to use")
-    args.add_argument("--ssd-path", type=str, default="/mnt", help="Where to store data")
+    args.add_argument("--master-hostname", type=str, default=os.getenv("CRYOSPARC_MASTER_HOSTNAME"), help="Number of CPU cores to use")
+    args.add_argument("--ssd-path", type=str, default="/tmp", help="Where to store data")
     args.add_argument("--num-cpu", type=int, default=1, help="Number of CPU cores to use")
-    args.add_argument("--num-gpu", type=int, default=1, help="Number of GPU cores to use")
-    args.add_argument("--memory", type=str, default="10Gi", help="Memory to use")
+    args.add_argument("--num-gpu", type=int, default=0, help="Number of GPU cores to use")
+    args.add_argument("--gpu-type", type=str, default="", help="GPU node selector")
+    args.add_argument("--memory", type=str, default="62Gi", help="Memory to use")
     args.add_argument("--walltime", type=str, default="02:00:00", help="Walltime")
     args.add_argument("--scratch-local", type=str, default="1000Mi", help="Number of GPU cores to use")
     args.add_argument("--command", type=str, help="Command to run in container")

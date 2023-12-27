@@ -1,0 +1,89 @@
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: cryosparc-master
+spec:
+  selector:
+    matchLabels:
+      app: cryosparc-master
+  serviceName: cryosparc-master
+  replicas: 1
+  volumeClaimTemplates: []
+  template:
+    metadata:
+      annotations: {}
+      labels:
+        app: cryosparc-master
+    spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccount: cryosparc-master
+      containers:
+      - name: cryosparc-master
+        command:
+        - /bin/bash
+        - -c
+        - '/opt/cryosparc_master/bin/cryosparcm start; /opt/cryosparc_master/bin/cryosparcm createuser --email "$cryosparc_email" --password "$cryosparc_password" --username "$cryosparc_username" --firstname "$cryosparc_firstname" --lastname "$cryosparc_lastname"; /opt/cryosparc_master/bin/cryosparcm cluster connect; sleep infinity'
+        image: cerit.io/cerit/cryosparc:master-v4.4.1
+{{/*        image: cerit.io/cerit/cryosparc:master-v0.2*/}}
+{{/*        command: [ "/bin/bash", "-c" ]*/}}
+{{/*        args: [ "/opt/cryosparc_master/entrypoint.sh start_master create_user heartbeat" ]*/}}
+        imagePullPolicy: Always
+        env:
+        - name: CRYOSPARC_LICENSE_ID
+          value: 74f2d264-77d7-11ed-bb40-63f6990bba5f
+        - name: CRYOSPARC_MASTER_HOSTNAME
+          value: cryosparc-master
+        - name: cryosparc_username
+          value: emcf
+        - name: cryosparc_password
+          value: Kokos
+        - name: cryosparc_email
+          value: xhejtman@ics.muni.cz
+        - name: cryosparc_firstname
+          value: Lukas
+        - name: cryosparc_lastname
+          value: Hejtmanek
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          limits:
+            cpu: "1"
+            memory: "8192Mi"
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+{{/*        - name: brno14*/}}
+{{/*          mountPath: /mnt/brno14*/}}
+        - name: db
+          mountPath: /opt/cryosparc_database
+        - name: clusterinfo
+          mountPath: /opt/cryosparc_master/cluster_info.json
+          subPath: cluster_info.json
+        - name: clusterinfo
+          mountPath: /opt/cryosparc_master/cluster_script.sh
+          subPath: cluster_script.sh
+        - name: share
+          mountPath: /mnt/share
+      volumes:
+{{/*      - name: brno14*/}}
+{{/*        persistentVolumeClaim:*/}}
+{{/*          claimName: pvc-cryosparc-brno14*/}}
+      - name: db
+        persistentVolumeClaim:
+          claimName: pvc-cryosparc-db
+      - name: clusterinfo
+        configMap:
+          name: {{ .Release.Name }}-config
+      - name: share
+        persistentVolumeClaim:
+          claimName: pvc-cryosparc-share

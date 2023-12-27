@@ -57,6 +57,7 @@ function pack() {
     if [ -z ${ZIP_NAME+x} ]; then ZIP_NAME='cryosparc.zip'; fi
 
     zip -r "${ZIP_NAME}" \
+        charts \
         deploy \
         src \
         entrypoints \
@@ -106,25 +107,32 @@ function build_push_cryosparc_on_remote() {
 
     folder_cryosparc="~/repos/cryosparc"
 
+    local dockerfile_master="deploy/docker/Dockerfile_cryosparc_m_v2"
+    local dockerfile_worker="deploy/docker/Dockerfile_cryosparc_w_v3"
+    local dockerfile_master_worker="deploy/docker/Dockerfile_cryosparc_mw_v2"
+    local tag_master="cerit.io/cerit/cryosparc:master-v0.2"
+    local tag_worker="cerit.io/cerit/cryosparc:worker-v0.3"
+    local tag_master_worker="cerit.io/cerit/cryosparc:master-worker-v0.2"
+
     if [ ${M} -eq 1 ] && [ ${W} -eq 1 ] && [ ${MW} -eq 1 ]; then
         # Build and push cryosparc images (master, worker, master-worker) simultaneously
-        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc_m_v2 . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc master${NC}\n" &
-        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:worker-v0.2 -f deploy/docker/Dockerfile_cryosparc_w_v2 . && docker push cerit.io/cerit/cryosparc:worker-v0.2" && printf "${GREEN}Build and push cryosparc worker${NC}\n" &
-        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-worker-v0.2 -f deploy/docker/Dockerfile_cryosparc_mw_v2 . && docker push cerit.io/cerit/cryosparc:master-worker-v0.2" && printf "${GREEN}Build and push cryosparc master-worker${NC}\n"
+        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t ${tag_master} -f ${dockerfile_master} . && docker push ${tag_master}" && printf "${GREEN}Build and push cryosparc master${NC}\n" &
+        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t ${tag_worker} -f ${dockerfile_worker} . && docker push ${tag_worker}" && printf "${GREEN}Build and push cryosparc worker${NC}\n" &
+        ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t ${tag_master_worker} -f ${dockerfile_master_worker} . && docker push ${tag_master_worker}" && printf "${GREEN}Build and push cryosparc master-worker${NC}\n" &
     else
         # Build and push cryosparc master image
         if [ ${M} -eq 1 ]; then
-            ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-v0.2 -f deploy/docker/Dockerfile_cryosparc_m_v2 . && docker push cerit.io/cerit/cryosparc:master-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+            ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t ${tag_master} -f ${dockerfile_master} . && docker push ${tag_master}" && printf "${GREEN}Build and push cryosparc master${NC}\n" &
         fi
 
         # Build and push cryosparc worker image
         if [ ${W} -eq 1 ]; then
-            ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:worker-v0.2 -f deploy/docker/Dockerfile_cryosparc_w_v2 . && docker push cerit.io/cerit/cryosparc:worker-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+            ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t ${tag_worker} -f ${dockerfile_worker} . && docker push ${tag_worker}" && printf "${GREEN}Build and push cryosparc worker${NC}\n" &
         fi
 
         # Build and push cryosparc master and worker image
         if [ ${MW} -eq 1 ]; then
-            ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t cerit.io/cerit/cryosparc:master-worker-v0.2 -f deploy/docker/Dockerfile_cryosparc_mw_v2 . && docker push cerit.io/cerit/cryosparc:master-worker-v0.2" && printf "${GREEN}Build and push cryosparc${NC}\n"
+            ssh osiris_lapes "cd ${folder_cryosparc} && docker build -t ${tag_master_worker} -f ${dockerfile_master_worker} . && docker push ${tag_master_worker}" && printf "${GREEN}Build and push cryosparc master-worker${NC}\n" &
         fi
     fi
 }
